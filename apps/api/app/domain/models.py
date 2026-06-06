@@ -62,4 +62,5 @@ class ImportResult(BaseModel):
     status: Literal["queued", "parsed"]
     message: str
     chapters: list[Chapter] = []
+    characters: list[Character] = []
     source_text: str = ""

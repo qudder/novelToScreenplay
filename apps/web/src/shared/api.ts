@@ -1,5 +1,5 @@
 import { chapters, characters, events, relationships, scenes } from "./mockData";
-import type { Chapter, ChapterDto, ImportDocumentResult } from "./types";
+import type { Chapter, ChapterDto, Character, CharacterDto, ImportDocumentResult } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -11,6 +11,18 @@ function mapChapter(dto: ChapterDto): Chapter {
     wordCount: dto.word_count,
     conflict: dto.conflict,
     characterIds: dto.character_ids
+  };
+}
+
+function mapCharacter(dto: CharacterDto): Character {
+  return {
+    id: dto.id,
+    name: dto.name,
+    aliases: dto.aliases,
+    importance: dto.importance,
+    role: dto.role,
+    description: dto.description,
+    appearances: dto.appearances
   };
 }
 
@@ -30,6 +42,7 @@ export const studioApi = {
     message: string;
     sourceText: string;
     chapters: Chapter[];
+    characters: Character[];
   }> {
     const formData = new FormData();
     formData.append("file", file);
@@ -50,7 +63,34 @@ export const studioApi = {
       filename: result.filename,
       message: result.message,
       sourceText: result.source_text,
-      chapters: result.chapters.map(mapChapter)
+      chapters: result.chapters.map(mapChapter),
+      characters: result.characters.map(mapCharacter)
     };
+  },
+
+  async getDeepSeekSettings(): Promise<{ configured: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/settings/deepseek`);
+    if (!response.ok) {
+      throw new Error("无法读取 DeepSeek 配置状态。");
+    }
+
+    return (await response.json()) as { configured: boolean };
+  },
+
+  async saveDeepSeekApiKey(apiKey: string): Promise<{ configured: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/settings/deepseek`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ api_key: apiKey })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "保存 DeepSeek API Key 失败。");
+    }
+
+    return (await response.json()) as { configured: boolean };
   }
 };

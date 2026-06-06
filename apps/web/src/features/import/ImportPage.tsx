@@ -1,5 +1,5 @@
-import { ChangeEvent, useRef, useState } from "react";
-import { FileText, UploadCloud } from "lucide-react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { FileText, KeyRound, UploadCloud } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { chapters as mockChapters } from "../../shared/mockData";
 import { studioApi } from "../../shared/api";
@@ -18,6 +18,43 @@ export function ImportPage() {
   );
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [isKeyConfigured, setIsKeyConfigured] = useState(false);
+  const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 DeepSeek 配置...");
+  const [isSavingKey, setIsSavingKey] = useState(false);
+
+  useEffect(() => {
+    studioApi
+      .getDeepSeekSettings()
+      .then((settings) => {
+        setIsKeyConfigured(settings.configured);
+        setKeyStatusMessage(settings.configured ? "DeepSeek API Key 已配置。" : "DeepSeek API Key 尚未配置。");
+      })
+      .catch(() => {
+        setKeyStatusMessage("无法读取 DeepSeek 配置状态。");
+      });
+  }, []);
+
+  async function handleSaveApiKey() {
+    if (!apiKey.trim()) {
+      setKeyStatusMessage("请输入 DeepSeek API Key。");
+      return;
+    }
+
+    setIsSavingKey(true);
+    setKeyStatusMessage("正在保存 DeepSeek API Key...");
+
+    try {
+      const result = await studioApi.saveDeepSeekApiKey(apiKey);
+      setIsKeyConfigured(result.configured);
+      setApiKey("");
+      setKeyStatusMessage("DeepSeek API Key 已保存到本地后端。");
+    } catch (error) {
+      setKeyStatusMessage(error instanceof Error ? error.message : "保存失败。");
+    } finally {
+      setIsSavingKey(false);
+    }
+  }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -38,6 +75,7 @@ export function ImportPage() {
         message: result.message,
         sourceText: result.sourceText,
         chapters: result.chapters,
+        characters: result.characters,
         importedAt: new Date().toISOString()
       });
     } catch (error) {
@@ -58,6 +96,25 @@ export function ImportPage() {
       />
       <div className="two-column">
         <div className="panel animate-in">
+          <div className="settings-panel">
+            <div className="section-title">
+              <KeyRound size={18} />
+              <h2>DeepSeek 配置</h2>
+            </div>
+            <div className="api-key-row">
+              <input
+                className="text-input"
+                type="password"
+                value={apiKey}
+                placeholder={isKeyConfigured ? "已配置，可输入新 key 覆盖" : "输入 DeepSeek API Key"}
+                onChange={(event) => setApiKey(event.target.value)}
+              />
+              <button className="ghost-button" type="button" disabled={isSavingKey} onClick={handleSaveApiKey}>
+                {isSavingKey ? "保存中..." : "保存"}
+              </button>
+            </div>
+            <small className={isKeyConfigured ? "status-ok" : "status-warn"}>{keyStatusMessage}</small>
+          </div>
           <div className="upload-zone">
             <UploadCloud size={40} />
             <h2>拖拽或选择小说文件</h2>
