@@ -1,5 +1,17 @@
 import { chapters, characters, events, relationships, scenes } from "./mockData";
-import type { Chapter, ChapterDto, Character, CharacterDto, ImportDocumentResult } from "./types";
+import type {
+  Chapter,
+  ChapterDto,
+  Character,
+  CharacterDto,
+  Event,
+  EventDto,
+  ImportDocumentResult,
+  Relationship,
+  RelationshipDto,
+  Scene,
+  SceneDto
+} from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -26,6 +38,47 @@ function mapCharacter(dto: CharacterDto): Character {
   };
 }
 
+function mapEvent(dto: EventDto): Event {
+  return {
+    id: dto.id,
+    chapterId: dto.chapter_id,
+    title: dto.title,
+    summary: dto.summary,
+    conflict: dto.conflict,
+    characterIds: dto.character_ids,
+    characters: dto.characters,
+    location: dto.location,
+    timeText: dto.time_text,
+    consequence: dto.consequence
+  };
+}
+
+function mapRelationship(dto: RelationshipDto): Relationship {
+  return {
+    id: dto.id,
+    source: dto.source,
+    target: dto.target,
+    type: dto.type,
+    strength: dto.strength,
+    evidence: dto.evidence
+  };
+}
+
+function mapScene(dto: SceneDto): Scene {
+  return {
+    id: dto.id,
+    title: dto.title,
+    location: dto.location,
+    timeOfDay: dto.time_of_day,
+    eventIds: dto.event_ids,
+    characterIds: dto.character_ids,
+    dramaticFunction: dto.dramatic_function,
+    eventTitles: dto.event_titles,
+    characters: dto.characters,
+    adaptationNote: dto.adaptation_note
+  };
+}
+
 export const studioApi = {
   async getWorkspace() {
     return {
@@ -43,6 +96,16 @@ export const studioApi = {
     sourceText: string;
     chapters: Chapter[];
     characters: Character[];
+    locations: ImportDocumentResult["locations"];
+    timeMarkers: ImportDocumentResult["time_markers"];
+    events: Event[];
+    relationships: Relationship[];
+    conflicts: ImportDocumentResult["conflicts"];
+    dialogues: ImportDocumentResult["dialogues"];
+    actions: ImportDocumentResult["actions"];
+    motivations: ImportDocumentResult["motivations"];
+    causalLinks: ImportDocumentResult["causal_links"];
+    scenes: Scene[];
   }> {
     const formData = new FormData();
     formData.append("file", file);
@@ -64,7 +127,17 @@ export const studioApi = {
       message: result.message,
       sourceText: result.source_text,
       chapters: result.chapters.map(mapChapter),
-      characters: result.characters.map(mapCharacter)
+      characters: result.characters.map(mapCharacter),
+      locations: result.locations,
+      timeMarkers: result.time_markers,
+      events: result.events.map(mapEvent),
+      relationships: result.relationships.map(mapRelationship),
+      conflicts: result.conflicts,
+      dialogues: result.dialogues,
+      actions: result.actions,
+      motivations: result.motivations,
+      causalLinks: result.causal_links,
+      scenes: result.scenes.map(mapScene)
     };
   },
 
