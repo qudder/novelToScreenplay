@@ -1,47 +1,79 @@
 import { DndContext } from "@dnd-kit/core";
 import { PageHeader } from "../../shared/PageHeader";
-import { events, scenes } from "../../shared/mockData";
+import { events as mockEvents, scenes as mockScenes } from "../../shared/mockData";
+import { useCurrentNovel } from "../../shared/currentNovel";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
 export function ScenesPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
+  const currentNovel = useCurrentNovel();
+  const visibleEvents = currentNovel ? currentNovel.events : mockEvents;
+  const visibleScenes = currentNovel ? currentNovel.scenes : mockScenes;
+  const hasAnalysis = Boolean(currentNovel?.analysisStatus === "completed");
 
   return (
     <section ref={ref} className="page">
       <PageHeader
         eyebrow="Scene Board"
         title="场景拆分板"
-        description="把小说事件拖拽、合并、排序成剧本场景，保留来源事件和戏剧功能。"
+        description="把小说事件整理为剧本场景候选，保留来源事件、地点、时间和戏剧功能。"
       />
+      {currentNovel ? (
+        <div className="current-novel-banner animate-in">
+          当前小说：{currentNovel.filename} · 分析状态：{currentNovel.analysisStatus ?? "idle"}
+        </div>
+      ) : null}
       <DndContext>
         <div className="board-layout">
           <div className="panel animate-in">
             <h2>事件池</h2>
             <div className="event-stack">
-              {events.map((event) => (
-                <div className="compact-card draggable-card" key={event.id}>
-                  <strong>{event.title}</strong>
-                  <p>{event.summary}</p>
-                  <small>{event.conflict}</small>
+              {visibleEvents.length > 0 ? (
+                visibleEvents.map((event) => (
+                  <div className="compact-card draggable-card" key={event.id}>
+                    <strong>{event.title}</strong>
+                    <p>{event.summary}</p>
+                    <small>
+                      {event.location ? `${event.location} · ` : ""}
+                      {event.timeText ? `${event.timeText} · ` : ""}
+                      {event.conflict || "无明确冲突"}
+                    </small>
+                    {event.consequence ? <p className="muted-line">结果：{event.consequence}</p> : null}
+                  </div>
+                ))
+              ) : (
+                <div className="compact-card">
+                  <strong>{hasAnalysis ? "暂无事件" : "等待叙事分析"}</strong>
+                  <p>完成叙事分析后，事件会出现在这里。</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
           <div className="panel animate-in">
-            <h2>剧本场景</h2>
+            <h2>剧本场景候选</h2>
             <div className="scene-columns">
-              {scenes.map((scene) => (
-                <article className="scene-card" key={scene.id}>
-                  <strong>{scene.title}</strong>
-                  <p>{scene.location} · {scene.timeOfDay}</p>
-                  <small>{scene.dramaticFunction}</small>
-                  <div className="tag-row">
-                    {scene.eventIds.map((eventId) => (
-                      <span key={eventId}>{eventId}</span>
-                    ))}
-                  </div>
+              {visibleScenes.length > 0 ? (
+                visibleScenes.map((scene) => (
+                  <article className="scene-card" key={scene.id}>
+                    <strong>{scene.title}</strong>
+                    <p>
+                      {scene.location || "地点待定"} · {scene.timeOfDay || "时间待定"}
+                    </p>
+                    <small>{scene.dramaticFunction || "戏剧功能待确认"}</small>
+                    {scene.adaptationNote ? <p className="muted-line">改编：{scene.adaptationNote}</p> : null}
+                    <div className="tag-row">
+                      {(scene.eventTitles?.length ? scene.eventTitles : scene.eventIds).map((eventId) => (
+                        <span key={eventId}>{eventId}</span>
+                      ))}
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <article className="scene-card">
+                  <strong>{hasAnalysis ? "暂无场景候选" : "等待叙事分析"}</strong>
+                  <p>完成叙事分析后，模型生成的场景候选会出现在这里。</p>
                 </article>
-              ))}
+              )}
             </div>
           </div>
         </div>

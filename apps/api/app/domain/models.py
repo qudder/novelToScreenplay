@@ -156,6 +156,7 @@ class Workspace(BaseModel):
 
 
 class ImportResult(BaseModel):
+    document_id: str = ""
     filename: str
     status: Literal["queued", "parsed"]
     message: str
@@ -173,3 +174,27 @@ class ImportResult(BaseModel):
     scenes: list[Scene] = []
     chapter_analyses: list[ChapterAnalysis] = []
     source_text: str = ""
+
+
+class AnalysisResult(BaseModel):
+    document_id: str
+    status: Literal["idle", "running", "completed", "failed"]
+    message: str = ""
+    characters: list[Character] = []
+    locations: list[Location] = []
+    time_markers: list[TimeMarker] = []
+    events: list[Event] = []
+    relationships: list[Relationship] = []
+    conflicts: list[Conflict] = []
+    dialogues: list[Dialogue] = []
+    actions: list[Action] = []
+    motivations: list[Motivation] = []
+    causal_links: list[CausalLink] = []
+    scenes: list[Scene] = []
+    chapter_analyses: list[ChapterAnalysis] = []
+
+
+class AnalysisStartResult(BaseModel):
+    document_id: str
+    status: Literal["idle", "running", "completed", "failed"]
+    message: str

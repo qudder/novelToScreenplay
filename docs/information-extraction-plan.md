@@ -153,6 +153,35 @@ apps/api/app/.cache/deepseek
 
 同一章节内容不变时，系统直接读取缓存，不重复调用 DeepSeek。
 
+## 调试输出
+
+为了方便排查模型输出，系统会将每章的请求和响应保存到本地：
+
+```text
+apps/api/app/.debug/deepseek/
+```
+
+每章目录包含：
+
+- `system_prompt.md`
+- `user_prompt.md`
+- `request.json`
+- `raw_response.txt`
+- `parsed_response.json`
+- `error.txt`，仅请求失败时生成
+
+调试目录不提交到 Git。
+
+## 并发策略
+
+章节分析以章节为单位异步执行。默认最大并发数为 3：
+
+```text
+max_concurrent_chapter_requests = 3
+```
+
+这样可以同时处理多个章节，但不会一次性把所有章节都打到模型接口，降低触发限流的风险。
+
 ## PR 拆分建议
 
 1. 新增综合 prompt 和后端数据模型。
@@ -160,4 +189,3 @@ apps/api/app/.cache/deepseek
 3. 将综合分析结果映射到前端角色、时间线、场景拆分板。
 4. 增加人工编辑和保存接口。
 5. 增加关系图、事件时间线和场景候选可视化。
-

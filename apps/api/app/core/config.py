@@ -20,7 +20,9 @@ def load_local_env() -> None:
 class Settings(BaseModel):
     app_name: str = "Novel to Screenplay API"
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    logging_enabled: bool = os.getenv("APP_LOGGING_ENABLED", "true").lower() == "true"
+    log_level: str = os.getenv("APP_LOG_LEVEL", "INFO").upper()
 
 
-settings = Settings()
 load_local_env()
+settings = Settings()

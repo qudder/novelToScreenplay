@@ -1,10 +1,14 @@
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.core.deepseek_config import deepseek_config
+from app.core.logging_config import get_logger
+
+logger = get_logger("services.deepseek")
 
 
 class DeepSeekConfigurationError(RuntimeError):
@@ -12,7 +16,7 @@ class DeepSeekConfigurationError(RuntimeError):
 
 
 class DeepSeekClient:
-    async def extract_json(self, user_prompt: str) -> dict[str, Any]:
+    async def extract_json(self, user_prompt: str, debug_context: str | None = None) -> dict[str, Any]:
         api_key = os.getenv("DEEPSEEK_API_KEY")
         if not api_key:
             raise DeepSeekConfigurationError(
@@ -20,6 +24,8 @@ class DeepSeekClient:
             )
 
         system_prompt = deepseek_config.prompt_path.read_text(encoding="utf-8")
+        debug_dir = _prepare_debug_dir(debug_context)
+        logger.info("准备 DeepSeek 请求：模型=%s，调试上下文=%s，调试目录=%s", deepseek_config.model, debug_context, debug_dir)
         payload = {
             "model": deepseek_config.model,
             "messages": [
@@ -31,25 +37,58 @@ class DeepSeekClient:
             "response_format": {"type": "json_object"},
             "stream": False,
         }
+        _write_debug_json(debug_dir, "request.json", _redact_request(payload))
+        _write_debug_text(debug_dir, "system_prompt.md", system_prompt)
+        _write_debug_text(debug_dir, "user_prompt.md", user_prompt)
 
-        async with httpx.AsyncClient(timeout=deepseek_config.timeout_seconds) as client:
-            response = await client.post(
-                f"{deepseek_config.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=deepseek_config.timeout_seconds) as client:
+                response = await client.post(
+                    f"{deepseek_config.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                _write_debug_text(debug_dir, "raw_response.txt", response.text)
+                response.raise_for_status()
+        except Exception as error:
+            _write_debug_text(debug_dir, "error.txt", repr(error))
+            logger.exception("DeepSeek 请求失败：调试上下文=%s，错误=%s", debug_context, error)
+            raise
 
         data = response.json()
         content = data["choices"][0]["message"]["content"]
         if not content:
             raise RuntimeError("DeepSeek returned empty content.")
 
-        return json.loads(content)
+        parsed = json.loads(content)
+        _write_debug_json(debug_dir, "parsed_response.json", parsed)
+        logger.info("DeepSeek 响应解析完成：调试上下文=%s，字段=%s", debug_context, list(parsed.keys()))
+        return parsed
+
+
+def _prepare_debug_dir(debug_context: str | None) -> Path:
+    safe_context = "".join(char if char.isalnum() or char in "-_" else "-" for char in (debug_context or "request"))
+    debug_dir = deepseek_config.debug_dir / safe_context
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    return debug_dir
+
+
+def _write_debug_json(debug_dir: Path, filename: str, payload: Any) -> None:
+    (debug_dir / filename).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_debug_text(debug_dir: Path, filename: str, content: str) -> None:
+    (debug_dir / filename).write_text(content, encoding="utf-8")
+
+
+def _redact_request(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **payload,
+        "debug_note": "Authorization header is intentionally not stored.",
+    }
 
 
 deepseek_client = DeepSeekClient()
-

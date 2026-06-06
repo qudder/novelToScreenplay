@@ -5,6 +5,7 @@ dist/
 apps/api/.env
 apps/api/.cache/
 apps/api/app/.cache/
+apps/api/app/.debug/
 __pycache__/
 *.pyc
 .pytest_cache/

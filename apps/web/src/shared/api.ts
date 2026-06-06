@@ -6,6 +6,7 @@ import type {
   CharacterDto,
   Event,
   EventDto,
+  AnalysisResultDto,
   ImportDocumentResult,
   Relationship,
   RelationshipDto,
@@ -79,6 +80,25 @@ function mapScene(dto: SceneDto): Scene {
   };
 }
 
+function mapAnalysisResult(result: AnalysisResultDto) {
+  return {
+    documentId: result.document_id,
+    status: result.status,
+    message: result.message,
+    characters: result.characters.map(mapCharacter),
+    locations: result.locations,
+    timeMarkers: result.time_markers,
+    events: result.events.map(mapEvent),
+    relationships: result.relationships.map(mapRelationship),
+    conflicts: result.conflicts,
+    dialogues: result.dialogues,
+    actions: result.actions,
+    motivations: result.motivations,
+    causalLinks: result.causal_links,
+    scenes: result.scenes.map(mapScene)
+  };
+}
+
 export const studioApi = {
   async getWorkspace() {
     return {
@@ -91,6 +111,7 @@ export const studioApi = {
   },
 
   async importDocument(file: File): Promise<{
+    documentId: string;
     filename: string;
     message: string;
     sourceText: string;
@@ -123,6 +144,7 @@ export const studioApi = {
 
     const result = (await response.json()) as ImportDocumentResult;
     return {
+      documentId: result.document_id,
       filename: result.filename,
       message: result.message,
       sourceText: result.source_text,
@@ -139,6 +161,39 @@ export const studioApi = {
       causalLinks: result.causal_links,
       scenes: result.scenes.map(mapScene)
     };
+  },
+
+  async startDocumentAnalysis(documentId: string): Promise<{
+    documentId: string;
+    status: "idle" | "running" | "completed" | "failed";
+    message: string;
+  }> {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/analysis`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "启动叙事分析失败。");
+    }
+
+    const result = await response.json();
+    return {
+      documentId: result.document_id,
+      status: result.status,
+      message: result.message
+    };
+  },
+
+  async getDocumentAnalysis(documentId: string): Promise<ReturnType<typeof mapAnalysisResult>> {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/analysis`);
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "读取叙事分析状态失败。");
+    }
+
+    return mapAnalysisResult((await response.json()) as AnalysisResultDto);
   },
 
   async getDeepSeekSettings(): Promise<{ configured: boolean }> {
