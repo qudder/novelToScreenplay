@@ -38,6 +38,7 @@ export type ImportDocumentResult = {
   chapters: ChapterDto[];
   characters: CharacterDto[];
   locations: LocationDto[];
+  environments: EnvironmentInfoDto[];
   time_markers: TimeMarkerDto[];
   events: EventDto[];
   relationships: RelationshipDto[];
@@ -47,6 +48,8 @@ export type ImportDocumentResult = {
   motivations: MotivationDto[];
   causal_links: CausalLinkDto[];
   scenes: SceneDto[];
+  narrative_blocks: NarrativeBlockDto[];
+  sub_scenes: SubSceneDto[];
   empty_chapter_ids?: string[];
   source_text: string;
 };
@@ -60,6 +63,7 @@ export type CurrentNovel = {
   chapters: Chapter[];
   characters: Character[];
   locations: LocationDto[];
+  environments: EnvironmentInfo[];
   timeMarkers: TimeMarkerDto[];
   events: Event[];
   relationships: Relationship[];
@@ -69,6 +73,8 @@ export type CurrentNovel = {
   motivations: MotivationDto[];
   causalLinks: CausalLinkDto[];
   scenes: Scene[];
+  narrativeBlocks: NarrativeBlock[];
+  subScenes: SubScene[];
   emptyChapterIds?: string[];
   importedAt: string;
 };
@@ -79,6 +85,7 @@ export type AnalysisResultDto = {
   message: string;
   characters: CharacterDto[];
   locations: LocationDto[];
+  environments: EnvironmentInfoDto[];
   time_markers: TimeMarkerDto[];
   events: EventDto[];
   relationships: RelationshipDto[];
@@ -88,6 +95,8 @@ export type AnalysisResultDto = {
   motivations: MotivationDto[];
   causal_links: CausalLinkDto[];
   scenes: SceneDto[];
+  narrative_blocks: NarrativeBlockDto[];
+  sub_scenes: SubSceneDto[];
   empty_chapter_ids?: string[];
 };
 
@@ -133,6 +142,8 @@ export type Event = {
   location?: string;
   timeText?: string;
   consequence?: string;
+  dialogueIds?: string[];
+  environmentIds?: string[];
   sourceRefs?: SourceRef[];
 };
 
@@ -150,6 +161,76 @@ export type Scene = {
   sourceRefs?: SourceRef[];
 };
 
+export type NarrativeBlock = {
+  id: string;
+  title: string;
+  chapterIds: string[];
+  summary: string;
+  dramaticGoal: string;
+  mainConflict: string;
+  storyTime: string;
+  locationScope: string;
+  characterIds: string[];
+  characters: string[];
+  subSceneIds: string[];
+  sourceRefs?: SourceRef[];
+};
+
+export type NarrativeBlockDto = {
+  id: string;
+  title: string;
+  chapter_ids: string[];
+  summary: string;
+  dramatic_goal: string;
+  main_conflict: string;
+  story_time: string;
+  location_scope: string;
+  character_ids: string[];
+  characters: string[];
+  sub_scene_ids: string[];
+  source_refs?: SourceRefDto[];
+};
+
+export type SubScene = {
+  id: string;
+  blockId: string;
+  chapterId: string;
+  title: string;
+  location: string;
+  timeText: string;
+  timeOfDay: string;
+  dramaticFunction: string;
+  eventTitles: string[];
+  eventIds: string[];
+  dialogueIds: string[];
+  environmentIds: string[];
+  actionIds: string[];
+  conflictIds: string[];
+  characters: string[];
+  characterIds: string[];
+  sourceRefs?: SourceRef[];
+};
+
+export type SubSceneDto = {
+  id: string;
+  block_id: string;
+  chapter_id: string;
+  title: string;
+  location: string;
+  time_text: string;
+  time_of_day: string;
+  dramatic_function: string;
+  event_titles: string[];
+  event_ids: string[];
+  dialogue_ids: string[];
+  environment_ids: string[];
+  action_ids: string[];
+  conflict_ids: string[];
+  characters: string[];
+  character_ids: string[];
+  source_refs?: SourceRefDto[];
+};
+
 export type LocationDto = {
   id: string;
   name: string;
@@ -157,6 +238,38 @@ export type LocationDto = {
   description: string;
   evidence: string;
   chapter_id: string;
+};
+
+export type EnvironmentInfo = {
+  id: string;
+  chapterId: string;
+  sceneTitle: string;
+  eventTitles: string[];
+  location: string;
+  timeText: string;
+  weather: string;
+  light: string;
+  sound: string;
+  atmosphere: string;
+  props: string[];
+  visualDetails: string[];
+  sourceRefs?: SourceRef[];
+};
+
+export type EnvironmentInfoDto = {
+  id: string;
+  chapter_id: string;
+  scene_title: string;
+  event_titles: string[];
+  location: string;
+  time_text: string;
+  weather: string;
+  light: string;
+  sound: string;
+  atmosphere: string;
+  props: string[];
+  visual_details: string[];
+  source_refs?: SourceRefDto[];
 };
 
 export type TimeMarkerDto = {
@@ -179,6 +292,8 @@ export type EventDto = {
   location: string;
   time_text: string;
   consequence: string;
+  dialogue_ids?: string[];
+  environment_ids?: string[];
   source_refs?: SourceRefDto[];
 };
 
@@ -219,11 +334,15 @@ export type ConflictDto = {
 export type DialogueDto = {
   id: string;
   chapter_id: string;
+  event_title: string;
+  event_id: string;
   speaker: string;
   listener: string;
   content: string;
   emotion: string;
   source_text: string;
+  dramatic_purpose: string;
+  source_refs?: SourceRefDto[];
 };
 
 export type ActionDto = {

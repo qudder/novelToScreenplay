@@ -15,18 +15,22 @@ from app.domain.models import (
     Conflict,
     Dialogue,
     EmotionArc,
+    EnvironmentInfo,
     Event,
     Location,
     Motivation,
+    NarrativeBlock,
     Relationship,
     Scene,
+    ShotPlan,
     SourceRef,
+    SubScene,
     TimeMarker,
 )
 from app.services.deepseek_client import deepseek_client
 
 logger = get_logger("services.chapter_analysis")
-CACHE_SCHEMA_VERSION = "chapter-analysis-v2-screenplay-source-refs"
+CACHE_SCHEMA_VERSION = "chapter-analysis-v5-shot-plans"
 
 
 class _RefreshChapterCache(RuntimeError):
@@ -38,6 +42,8 @@ class AggregatedAnalysis:
         self.chapter_analyses = chapter_analyses
         self.characters = self._merge_characters()
         self.locations = self._collect("locations")
+        self.environments = self._collect("environments")
+        self.shot_plans = self._collect("shot_plans")
         self.time_markers = self._collect("time_markers")
         self.events = self._collect("events")
         self.relationships = self._collect("relationships")
@@ -47,6 +53,8 @@ class AggregatedAnalysis:
         self.motivations = self._collect("motivations")
         self.causal_links = self._collect("causal_links")
         self.scenes = self._collect("scene_candidates")
+        self.narrative_blocks = self._collect("narrative_blocks")
+        self.sub_scenes = self._collect("sub_scenes")
 
     def _collect(self, field_name: str) -> list:
         items: list = []
@@ -88,6 +96,7 @@ async def analyze_chapters(chapters: list[Chapter], source_text: str, force_refr
     aggregated = AggregatedAnalysis(list(analyses))
     _attach_character_ids(chapters, aggregated.characters)
     _attach_event_and_scene_ids(aggregated)
+    _ensure_hierarchical_scene_data(chapters, aggregated)
     return aggregated
 
 
@@ -178,6 +187,8 @@ def _parse_analysis(chapter_id: str, payload: dict[str, Any]) -> ChapterAnalysis
         chapter_id=chapter_id,
         characters=[_parse_character(item, chapter_id) for item in payload.get("characters", []) if _has_name(item)],
         locations=[_parse_location(item, chapter_id) for item in payload.get("locations", []) if _has_name(item)],
+        environments=[_parse_environment(item, chapter_id) for item in payload.get("environments", [])],
+        shot_plans=[_parse_shot_plan(item, chapter_id) for item in payload.get("shot_plans", [])],
         time_markers=[_parse_time_marker(item, chapter_id) for item in payload.get("time_markers", [])],
         events=[_parse_event(item, chapter_id) for item in payload.get("events", []) if item.get("title")],
         relationships=[_parse_relationship(item) for item in payload.get("relationships", []) if item.get("source") and item.get("target")],
@@ -187,6 +198,8 @@ def _parse_analysis(chapter_id: str, payload: dict[str, Any]) -> ChapterAnalysis
         motivations=[_parse_motivation(item, chapter_id) for item in payload.get("motivations", [])],
         causal_links=[_parse_causal_link(item, chapter_id) for item in payload.get("causal_links", [])],
         scene_candidates=[_parse_scene(item) for item in payload.get("scene_candidates", []) if item.get("title")],
+        narrative_blocks=[_parse_narrative_block(item, chapter_id) for item in payload.get("narrative_blocks", []) if item.get("title")],
+        sub_scenes=[_parse_sub_scene(item, chapter_id) for item in payload.get("sub_scenes", []) if item.get("title")],
         emotion_arc=_parse_emotion_arc(payload.get("emotion_arc", {})),
     )
 
@@ -212,6 +225,40 @@ def _parse_location(item: dict[str, Any], chapter_id: str) -> Location:
         description=_text(item.get("description")),
         evidence=_text(item.get("evidence")),
         chapter_id=chapter_id,
+    )
+
+
+def _parse_environment(item: dict[str, Any], chapter_id: str) -> EnvironmentInfo:
+    return EnvironmentInfo(
+        chapter_id=chapter_id,
+        scene_title=_text(item.get("scene_title")),
+        event_titles=[_text(value) for value in item.get("event_titles", []) if _text(value)],
+        location=_text(item.get("location")),
+        time_text=_text(item.get("time_text")),
+        weather=_text(item.get("weather")),
+        light=_text(item.get("light")),
+        sound=_text(item.get("sound")),
+        atmosphere=_text(item.get("atmosphere")),
+        props=[_text(value) for value in item.get("props", []) if _text(value)],
+        visual_details=[_text(value) for value in item.get("visual_details", []) if _text(value)],
+        source_refs=_source_refs(chapter_id, item),
+    )
+
+
+def _parse_shot_plan(item: dict[str, Any], chapter_id: str) -> ShotPlan:
+    return ShotPlan(
+        chapter_id=chapter_id,
+        scene_title=_text(item.get("scene_title")),
+        event_title=_text(item.get("event_title")),
+        sequence_order=_int(item.get("sequence_order")),
+        shot_type=_text(item.get("shot_type")),
+        viewpoint=_text(item.get("viewpoint")),
+        composition=_text(item.get("composition")),
+        camera_movement=_text(item.get("camera_movement")),
+        visual_focus=_text(item.get("visual_focus")),
+        emotional_purpose=_text(item.get("emotional_purpose")),
+        transition=_text(item.get("transition")),
+        source_refs=_source_refs(chapter_id, item),
     )
 
 
@@ -265,11 +312,14 @@ def _parse_conflict(item: dict[str, Any], chapter_id: str) -> Conflict:
 def _parse_dialogue(item: dict[str, Any], chapter_id: str) -> Dialogue:
     return Dialogue(
         chapter_id=chapter_id,
+        event_title=_text(item.get("event_title")),
         speaker=_text(item.get("speaker")),
         listener=_text(item.get("listener")),
         content=_text(item.get("content")),
         emotion=_text(item.get("emotion")),
         source_text=_text(item.get("source_text")),
+        dramatic_purpose=_text(item.get("dramatic_purpose")),
+        source_refs=_source_refs(chapter_id, item),
     )
 
 
@@ -321,6 +371,42 @@ def _parse_scene(item: dict[str, Any]) -> Scene:
     )
 
 
+def _parse_narrative_block(item: dict[str, Any], chapter_id: str) -> NarrativeBlock:
+    chapter_ids = [_text(value) for value in item.get("chapter_ids", []) if _text(value)]
+    return NarrativeBlock(
+        title=_text(item.get("title")),
+        chapter_ids=chapter_ids or [chapter_id],
+        summary=_text(item.get("summary")),
+        dramatic_goal=_text(item.get("dramatic_goal")),
+        main_conflict=_text(item.get("main_conflict")),
+        story_time=_text(item.get("story_time")),
+        location_scope=_text(item.get("location_scope")),
+        characters=[_text(value) for value in item.get("characters", []) if _text(value)],
+        sub_scene_ids=[],
+        source_refs=_source_refs(chapter_id, item),
+    )
+
+
+def _parse_sub_scene(item: dict[str, Any], chapter_id: str) -> SubScene:
+    return SubScene(
+        block_id=_text(item.get("block_id")),
+        chapter_id=_text(item.get("chapter_id")) or chapter_id,
+        title=_text(item.get("title")),
+        location=_text(item.get("location")),
+        time_text=_text(item.get("time_text")),
+        time_of_day=_text(item.get("time_of_day")),
+        dramatic_function=_text(item.get("dramatic_function")),
+        event_titles=[_text(value) for value in item.get("event_titles", []) if _text(value)],
+        event_ids=[],
+        dialogue_ids=[_text(value) for value in item.get("dialogue_ids", []) if _text(value)],
+        environment_ids=[_text(value) for value in item.get("environment_ids", []) if _text(value)],
+        action_ids=[_text(value) for value in item.get("action_ids", []) if _text(value)],
+        conflict_ids=[_text(value) for value in item.get("conflict_ids", []) if _text(value)],
+        characters=[_text(value) for value in item.get("characters", []) if _text(value)],
+        source_refs=_source_refs(chapter_id, item),
+    )
+
+
 def _parse_emotion_arc(item: dict[str, Any]) -> EmotionArc:
     return EmotionArc(
         emotion=_text(item.get("emotion")),
@@ -356,10 +442,114 @@ def _attach_event_and_scene_ids(analysis: AggregatedAnalysis) -> None:
 
     for event in analysis.events:
         event.character_ids = [name_to_character_id[name] for name in event.characters if name in name_to_character_id]
+        event.dialogue_ids = [dialogue.id for dialogue in analysis.dialogues if dialogue.event_title == event.title]
+        event.environment_ids = [
+            environment.id
+            for environment in analysis.environments
+            if event.title in environment.event_titles or environment.scene_title == event.title
+        ]
+    title_to_environment_id = {environment.scene_title: environment.id for environment in analysis.environments}
 
     for scene in analysis.scenes:
         scene.character_ids = [name_to_character_id[name] for name in scene.characters if name in name_to_character_id]
         scene.event_ids = [title_to_event_id[title] for title in scene.event_titles if title in title_to_event_id]
+        for event_title in scene.event_titles:
+            environment_id = title_to_environment_id.get(event_title)
+            if environment_id:
+                for event in analysis.events:
+                    if event.title == event_title and environment_id not in event.environment_ids:
+                        event.environment_ids.append(environment_id)
+
+    for block in analysis.narrative_blocks:
+        block.character_ids = [name_to_character_id[name] for name in block.characters if name in name_to_character_id]
+
+    for sub_scene in analysis.sub_scenes:
+        sub_scene.character_ids = [name_to_character_id[name] for name in sub_scene.characters if name in name_to_character_id]
+        sub_scene.event_ids = [title_to_event_id[title] for title in sub_scene.event_titles if title in title_to_event_id]
+        related_events = [event for event in analysis.events if event.id in sub_scene.event_ids]
+        sub_scene.dialogue_ids = _unique(sub_scene.dialogue_ids + [dialogue_id for event in related_events for dialogue_id in event.dialogue_ids])
+        sub_scene.environment_ids = _unique(
+            sub_scene.environment_ids + [environment_id for event in related_events for environment_id in event.environment_ids]
+        )
+        sub_scene.shot_ids = _unique(
+            sub_scene.shot_ids
+            + [
+                shot.id
+                for shot in analysis.shot_plans
+                if shot.scene_title == sub_scene.title or shot.event_title in sub_scene.event_titles
+            ]
+        )
+
+
+def _ensure_hierarchical_scene_data(chapters: list[Chapter], analysis: AggregatedAnalysis) -> None:
+    if not analysis.narrative_blocks:
+        analysis.narrative_blocks = [_fallback_block_from_chapter(chapter, analysis) for chapter in chapters]
+
+    if not analysis.sub_scenes:
+        analysis.sub_scenes = [_fallback_sub_scene_from_scene(scene) for scene in analysis.scenes]
+
+    for index, block in enumerate(analysis.narrative_blocks, start=1):
+        if not block.id:
+            block.id = f"narrative_blocks-{index}"
+    for index, sub_scene in enumerate(analysis.sub_scenes, start=1):
+        if not sub_scene.id:
+            sub_scene.id = f"sub_scenes-{index}"
+
+    block_by_chapter_id = {
+        chapter_id: block
+        for block in analysis.narrative_blocks
+        for chapter_id in block.chapter_ids
+    }
+    if not block_by_chapter_id and analysis.narrative_blocks:
+        block_by_chapter_id = {chapter.id: analysis.narrative_blocks[0] for chapter in chapters}
+
+    for sub_scene in analysis.sub_scenes:
+        block = block_by_chapter_id.get(sub_scene.chapter_id)
+        if not block and analysis.narrative_blocks:
+            block = analysis.narrative_blocks[0]
+        if block:
+            sub_scene.block_id = block.id
+            if sub_scene.id not in block.sub_scene_ids:
+                block.sub_scene_ids.append(sub_scene.id)
+
+    _attach_event_and_scene_ids(analysis)
+
+
+def _fallback_block_from_chapter(chapter: Chapter, analysis: AggregatedAnalysis) -> NarrativeBlock:
+    chapter_events = [event for event in analysis.events if event.chapter_id == chapter.id]
+    chapter_scenes = [
+        scene
+        for scene in analysis.scenes
+        if any(event.id in scene.event_ids for event in chapter_events) or any(event.title in scene.event_titles for event in chapter_events)
+    ]
+    characters = sorted({name for event in chapter_events for name in event.characters})
+    locations = sorted({event.location for event in chapter_events if event.location})
+    refs = _merge_source_refs([ref for event in chapter_events for ref in event.source_refs] + [ref for scene in chapter_scenes for ref in scene.source_refs])
+    return NarrativeBlock(
+        title=chapter.title,
+        chapter_ids=[chapter.id],
+        summary=chapter.summary,
+        dramatic_goal=chapter.conflict,
+        main_conflict=chapter.conflict,
+        story_time="、".join(_unique([event.time_text for event in chapter_events if event.time_text])),
+        location_scope="、".join(locations),
+        characters=characters,
+        source_refs=refs[:3],
+    )
+
+
+def _fallback_sub_scene_from_scene(scene: Scene) -> SubScene:
+    return SubScene(
+        chapter_id=scene.source_refs[0].chapter_id if scene.source_refs else "",
+        title=scene.title,
+        location=scene.location,
+        time_of_day=scene.time_of_day,
+        dramatic_function=scene.dramatic_function,
+        event_titles=scene.event_titles,
+        event_ids=scene.event_ids,
+        characters=scene.characters,
+        source_refs=scene.source_refs,
+    )
 
 
 def _attach_source_positions(analysis: ChapterAnalysis, chapter_text: str) -> None:
@@ -367,8 +557,18 @@ def _attach_source_positions(analysis: ChapterAnalysis, chapter_text: str) -> No
         _locate_refs(character.source_refs, chapter_text)
     for event in analysis.events:
         _locate_refs(event.source_refs, chapter_text)
+    for environment in analysis.environments:
+        _locate_refs(environment.source_refs, chapter_text)
+    for shot_plan in analysis.shot_plans:
+        _locate_refs(shot_plan.source_refs, chapter_text)
+    for dialogue in analysis.dialogues:
+        _locate_refs(dialogue.source_refs, chapter_text)
     for scene in analysis.scene_candidates:
         _locate_refs(scene.source_refs, chapter_text)
+    for block in analysis.narrative_blocks:
+        _locate_refs(block.source_refs, chapter_text)
+    for sub_scene in analysis.sub_scenes:
+        _locate_refs(sub_scene.source_refs, chapter_text)
 
 
 def _locate_refs(refs: list[SourceRef], chapter_text: str) -> None:
@@ -483,3 +683,11 @@ def _merge_source_refs(refs: list[SourceRef]) -> list[SourceRef]:
         if key not in merged:
             merged[key] = ref
     return list(merged.values())
+
+
+def _unique(values: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        if value and value not in result:
+            result.append(value)
+    return result

@@ -47,6 +47,7 @@ class WorkspaceService:
             chapters=record.chapters,
             characters=record.analysis.characters,
             locations=record.analysis.locations,
+            environments=record.analysis.environments,
             time_markers=record.analysis.time_markers,
             events=record.analysis.events,
             relationships=record.analysis.relationships,
@@ -56,6 +57,8 @@ class WorkspaceService:
             motivations=record.analysis.motivations,
             causal_links=record.analysis.causal_links,
             scenes=record.analysis.scenes,
+            narrative_blocks=record.analysis.narrative_blocks,
+            sub_scenes=record.analysis.sub_scenes,
             chapter_analyses=record.analysis.chapter_analyses,
             source_text=record.source_text,
         )
@@ -76,6 +79,7 @@ class WorkspaceService:
             message=payload.message or "已从浏览器快照恢复。",
             characters=payload.characters,
             locations=payload.locations,
+            environments=payload.environments,
             time_markers=payload.time_markers,
             events=payload.events,
             relationships=payload.relationships,
@@ -85,6 +89,8 @@ class WorkspaceService:
             motivations=payload.motivations,
             causal_links=payload.causal_links,
             scenes=payload.scenes,
+            narrative_blocks=payload.narrative_blocks,
+            sub_scenes=payload.sub_scenes,
             chapter_analyses=payload.chapter_analyses,
         )
         document_store.upsert(record)
@@ -144,6 +150,7 @@ class WorkspaceService:
                 message="叙事分析已完成。",
                 characters=analysis.characters,
                 locations=analysis.locations,
+                environments=analysis.environments,
                 time_markers=analysis.time_markers,
                 events=analysis.events,
                 relationships=analysis.relationships,
@@ -153,17 +160,20 @@ class WorkspaceService:
                 motivations=analysis.motivations,
                 causal_links=analysis.causal_links,
                 scenes=analysis.scenes,
+                narrative_blocks=analysis.narrative_blocks,
+                sub_scenes=analysis.sub_scenes,
                 chapter_analyses=analysis.chapter_analyses,
                 empty_chapter_ids=_empty_chapter_ids(analysis.chapter_analyses),
             )
             document_store.save(record)
             logger.info(
-                "叙事分析完成：文档ID=%s，角色数=%s，事件数=%s，关系数=%s，场景数=%s",
+                "叙事分析完成：文档ID=%s，角色数=%s，事件数=%s，关系数=%s，总场景数=%s，子场景数=%s",
                 document_id,
                 len(analysis.characters),
                 len(analysis.events),
                 len(analysis.relationships),
-                len(analysis.scenes),
+                len(analysis.narrative_blocks),
+                len(analysis.sub_scenes),
             )
         except Exception as error:
             record.analysis = AnalysisResult(
@@ -183,6 +193,7 @@ def _has_analysis_payload(payload: ImportResult) -> bool:
         [
             payload.characters,
             payload.locations,
+            payload.environments,
             payload.time_markers,
             payload.events,
             payload.relationships,
@@ -192,6 +203,8 @@ def _has_analysis_payload(payload: ImportResult) -> bool:
             payload.motivations,
             payload.causal_links,
             payload.scenes,
+            payload.narrative_blocks,
+            payload.sub_scenes,
             payload.chapter_analyses,
         ]
     )
@@ -204,6 +217,7 @@ def _empty_chapter_ids(chapter_analyses) -> list[str]:
             [
                 analysis.characters,
                 analysis.locations,
+                analysis.environments,
                 analysis.time_markers,
                 analysis.events,
                 analysis.relationships,
@@ -213,6 +227,8 @@ def _empty_chapter_ids(chapter_analyses) -> list[str]:
                 analysis.motivations,
                 analysis.causal_links,
                 analysis.scene_candidates,
+                analysis.narrative_blocks,
+                analysis.sub_scenes,
             ]
         )
         if not has_content:

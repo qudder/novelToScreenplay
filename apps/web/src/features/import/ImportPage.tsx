@@ -11,6 +11,7 @@ import { buildChapterSourceRef, SourceCompareModal, type ComparePayload } from "
 const emptyAnalysis = {
   characters: [],
   locations: [],
+  environments: [],
   timeMarkers: [],
   events: [],
   relationships: [],
@@ -19,7 +20,9 @@ const emptyAnalysis = {
   actions: [],
   motivations: [],
   causalLinks: [],
-  scenes: []
+  scenes: [],
+  narrativeBlocks: [],
+  subScenes: []
 };
 
 export function ImportPage() {
@@ -48,7 +51,7 @@ export function ImportPage() {
     characters: importedNovel?.characters.length ?? 0,
     events: importedNovel?.events.length ?? 0,
     relationships: importedNovel?.relationships.length ?? 0,
-    scenes: importedNovel?.scenes.length ?? 0
+    scenes: importedNovel?.subScenes?.length || importedNovel?.scenes.length || 0
   });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [apiKey, setApiKey] = useState("");
@@ -85,7 +88,7 @@ export function ImportPage() {
       characters: importedNovel.characters.length,
       events: importedNovel.events.length,
       relationships: importedNovel.relationships.length,
-      scenes: importedNovel.scenes.length
+      scenes: importedNovel.subScenes?.length || importedNovel.scenes.length
     });
   }, [importedNovel]);
 
@@ -211,6 +214,7 @@ export function ImportPage() {
           chapters: latestImport?.chapters ?? currentNovel?.chapters ?? chapters,
           characters: result.characters,
           locations: result.locations,
+          environments: result.environments,
           timeMarkers: result.timeMarkers,
           events: result.events,
           relationships: result.relationships,
@@ -220,6 +224,8 @@ export function ImportPage() {
           motivations: result.motivations,
           causalLinks: result.causalLinks,
           scenes: result.scenes,
+          narrativeBlocks: result.narrativeBlocks,
+          subScenes: result.subScenes,
           emptyChapterIds: result.emptyChapterIds,
           importedAt: latestImport?.importedAt ?? currentNovel?.importedAt ?? new Date().toISOString()
         };
@@ -227,7 +233,7 @@ export function ImportPage() {
           characters: result.characters.length,
           events: result.events.length,
           relationships: result.relationships.length,
-          scenes: result.scenes.length
+          scenes: result.subScenes.length || result.scenes.length
         });
         saveCurrentNovel(completedNovel);
         return;

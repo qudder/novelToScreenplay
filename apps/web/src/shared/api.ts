@@ -4,18 +4,24 @@ import type {
   ChapterDto,
   Character,
   CharacterDto,
+  EnvironmentInfo,
+  EnvironmentInfoDto,
   Event,
   EventDto,
   AnalysisResultDto,
   ImportDocumentResult,
+  NarrativeBlock,
+  NarrativeBlockDto,
   Relationship,
   RelationshipDto,
   Scene,
   SceneDto,
   SourceRef,
-  SourceRefDto
+  SourceRefDto,
+  SubScene,
+  SubSceneDto
 } from "./types";
-import type { ScreenplayDraft } from "./screenplayDraft";
+import type { SceneScreenplayDraft, ScreenplayDraft } from "./screenplayDraft";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -73,6 +79,26 @@ function mapEvent(dto: EventDto): Event {
     location: dto.location,
     timeText: dto.time_text,
     consequence: dto.consequence,
+    dialogueIds: dto.dialogue_ids ?? [],
+    environmentIds: dto.environment_ids ?? [],
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
+  };
+}
+
+function mapEnvironment(dto: EnvironmentInfoDto): EnvironmentInfo {
+  return {
+    id: dto.id,
+    chapterId: dto.chapter_id,
+    sceneTitle: dto.scene_title,
+    eventTitles: dto.event_titles,
+    location: dto.location,
+    timeText: dto.time_text,
+    weather: dto.weather,
+    light: dto.light,
+    sound: dto.sound,
+    atmosphere: dto.atmosphere,
+    props: dto.props,
+    visualDetails: dto.visual_details,
     sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
   };
 }
@@ -100,6 +126,45 @@ function mapScene(dto: SceneDto): Scene {
     eventTitles: dto.event_titles,
     characters: dto.characters,
     adaptationNote: dto.adaptation_note,
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
+  };
+}
+
+function mapNarrativeBlock(dto: NarrativeBlockDto): NarrativeBlock {
+  return {
+    id: dto.id,
+    title: dto.title,
+    chapterIds: dto.chapter_ids,
+    summary: dto.summary,
+    dramaticGoal: dto.dramatic_goal,
+    mainConflict: dto.main_conflict,
+    storyTime: dto.story_time,
+    locationScope: dto.location_scope,
+    characterIds: dto.character_ids,
+    characters: dto.characters,
+    subSceneIds: dto.sub_scene_ids,
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
+  };
+}
+
+function mapSubScene(dto: SubSceneDto): SubScene {
+  return {
+    id: dto.id,
+    blockId: dto.block_id,
+    chapterId: dto.chapter_id,
+    title: dto.title,
+    location: dto.location,
+    timeText: dto.time_text,
+    timeOfDay: dto.time_of_day,
+    dramaticFunction: dto.dramatic_function,
+    eventTitles: dto.event_titles,
+    eventIds: dto.event_ids,
+    dialogueIds: dto.dialogue_ids,
+    environmentIds: dto.environment_ids,
+    actionIds: dto.action_ids,
+    conflictIds: dto.conflict_ids,
+    characters: dto.characters,
+    characterIds: dto.character_ids,
     sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
   };
 }
@@ -140,6 +205,8 @@ function toEventDto(event: Event): EventDto {
     location: event.location ?? "",
     time_text: event.timeText ?? "",
     consequence: event.consequence ?? "",
+    dialogue_ids: event.dialogueIds ?? [],
+    environment_ids: event.environmentIds ?? [],
     source_refs: (event.sourceRefs ?? []).map(toSourceRefDto)
   };
 }
@@ -152,6 +219,24 @@ function toRelationshipDto(relationship: Relationship): RelationshipDto {
     type: relationship.type,
     strength: relationship.strength,
     evidence: relationship.evidence ?? ""
+  };
+}
+
+function toEnvironmentDto(environment: EnvironmentInfo): EnvironmentInfoDto {
+  return {
+    id: environment.id,
+    chapter_id: environment.chapterId,
+    scene_title: environment.sceneTitle,
+    event_titles: environment.eventTitles,
+    location: environment.location,
+    time_text: environment.timeText,
+    weather: environment.weather,
+    light: environment.light,
+    sound: environment.sound,
+    atmosphere: environment.atmosphere,
+    props: environment.props,
+    visual_details: environment.visualDetails,
+    source_refs: (environment.sourceRefs ?? []).map(toSourceRefDto)
   };
 }
 
@@ -171,6 +256,45 @@ function toSceneDto(scene: Scene): SceneDto {
   };
 }
 
+function toNarrativeBlockDto(block: NarrativeBlock): NarrativeBlockDto {
+  return {
+    id: block.id,
+    title: block.title,
+    chapter_ids: block.chapterIds,
+    summary: block.summary,
+    dramatic_goal: block.dramaticGoal,
+    main_conflict: block.mainConflict,
+    story_time: block.storyTime,
+    location_scope: block.locationScope,
+    character_ids: block.characterIds,
+    characters: block.characters,
+    sub_scene_ids: block.subSceneIds,
+    source_refs: (block.sourceRefs ?? []).map(toSourceRefDto)
+  };
+}
+
+function toSubSceneDto(subScene: SubScene): SubSceneDto {
+  return {
+    id: subScene.id,
+    block_id: subScene.blockId,
+    chapter_id: subScene.chapterId,
+    title: subScene.title,
+    location: subScene.location,
+    time_text: subScene.timeText,
+    time_of_day: subScene.timeOfDay,
+    dramatic_function: subScene.dramaticFunction,
+    event_titles: subScene.eventTitles,
+    event_ids: subScene.eventIds,
+    dialogue_ids: subScene.dialogueIds,
+    environment_ids: subScene.environmentIds,
+    action_ids: subScene.actionIds,
+    conflict_ids: subScene.conflictIds,
+    characters: subScene.characters,
+    character_ids: subScene.characterIds,
+    source_refs: (subScene.sourceRefs ?? []).map(toSourceRefDto)
+  };
+}
+
 function mapImportResult(result: ImportDocumentResult) {
   return {
     documentId: result.document_id,
@@ -180,6 +304,7 @@ function mapImportResult(result: ImportDocumentResult) {
     chapters: result.chapters.map(mapChapter),
     characters: result.characters.map(mapCharacter),
     locations: result.locations,
+    environments: (result.environments ?? []).map(mapEnvironment),
     timeMarkers: result.time_markers,
     events: result.events.map(mapEvent),
     relationships: result.relationships.map(mapRelationship),
@@ -189,6 +314,8 @@ function mapImportResult(result: ImportDocumentResult) {
     motivations: result.motivations,
     causalLinks: result.causal_links,
     scenes: result.scenes.map(mapScene),
+    narrativeBlocks: (result.narrative_blocks ?? []).map(mapNarrativeBlock),
+    subScenes: (result.sub_scenes ?? []).map(mapSubScene),
     emptyChapterIds: result.empty_chapter_ids ?? []
   };
 }
@@ -200,6 +327,7 @@ function mapAnalysisResult(result: AnalysisResultDto) {
     message: result.message,
     characters: result.characters.map(mapCharacter),
     locations: result.locations,
+    environments: (result.environments ?? []).map(mapEnvironment),
     timeMarkers: result.time_markers,
     events: result.events.map(mapEvent),
     relationships: result.relationships.map(mapRelationship),
@@ -209,6 +337,8 @@ function mapAnalysisResult(result: AnalysisResultDto) {
     motivations: result.motivations,
     causalLinks: result.causal_links,
     scenes: result.scenes.map(mapScene),
+    narrativeBlocks: (result.narrative_blocks ?? []).map(mapNarrativeBlock),
+    subScenes: (result.sub_scenes ?? []).map(mapSubScene),
     emptyChapterIds: result.empty_chapter_ids ?? []
   };
 }
@@ -232,6 +362,7 @@ export const studioApi = {
     chapters: Chapter[];
     characters: Character[];
     locations: ImportDocumentResult["locations"];
+    environments: EnvironmentInfo[];
     timeMarkers: ImportDocumentResult["time_markers"];
     events: Event[];
     relationships: Relationship[];
@@ -241,6 +372,8 @@ export const studioApi = {
     motivations: ImportDocumentResult["motivations"];
     causalLinks: ImportDocumentResult["causal_links"];
     scenes: Scene[];
+    narrativeBlocks: NarrativeBlock[];
+    subScenes: SubScene[];
   }> {
     const formData = new FormData();
     formData.append("file", file);
@@ -279,6 +412,7 @@ export const studioApi = {
     chapters: Chapter[];
     characters: Character[];
     locations: ImportDocumentResult["locations"];
+    environments: EnvironmentInfo[];
     timeMarkers: ImportDocumentResult["time_markers"];
     events: Event[];
     relationships: Relationship[];
@@ -288,6 +422,8 @@ export const studioApi = {
     motivations: ImportDocumentResult["motivations"];
     causalLinks: ImportDocumentResult["causal_links"];
     scenes: Scene[];
+    narrativeBlocks: NarrativeBlock[];
+    subScenes: SubScene[];
   }): Promise<ReturnType<typeof mapImportResult>> {
     if (!snapshot.documentId) {
       throw new Error("缺少文档 ID。");
@@ -302,6 +438,7 @@ export const studioApi = {
       chapters: snapshot.chapters.map(toChapterDto),
       characters: snapshot.characters.map(toCharacterDto),
       locations: snapshot.locations,
+      environments: snapshot.environments.map(toEnvironmentDto),
       time_markers: snapshot.timeMarkers,
       events: snapshot.events.map(toEventDto),
       relationships: snapshot.relationships.map(toRelationshipDto),
@@ -310,7 +447,9 @@ export const studioApi = {
       actions: snapshot.actions,
       motivations: snapshot.motivations,
       causal_links: snapshot.causalLinks,
-      scenes: snapshot.scenes.map(toSceneDto)
+      scenes: snapshot.scenes.map(toSceneDto),
+      narrative_blocks: (snapshot.narrativeBlocks ?? []).map(toNarrativeBlockDto),
+      sub_scenes: (snapshot.subScenes ?? []).map(toSubSceneDto)
     };
 
     const response = await fetch(`${API_BASE_URL}/api/documents/${snapshot.documentId}`, {
@@ -425,5 +564,50 @@ export const studioApi = {
     }
 
     return response.text();
+  },
+
+  async completeSceneScreenplay(payload: {
+    documentId: string;
+    filename: string;
+    scene: SceneScreenplayDraft;
+    sourceText: string;
+    events: Event[];
+    currentContent: string;
+  }): Promise<string> {
+    const sceneEventIdSet = new Set(payload.scene.eventIds);
+    const sceneEventTitleSet = new Set(payload.scene.eventTitles);
+    const relatedEvents = payload.events.filter((event) => sceneEventIdSet.has(event.id) || sceneEventTitleSet.has(event.title));
+    const response = await fetch(`${API_BASE_URL}/api/screenplays/complete-scene`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        document_id: payload.documentId,
+        filename: payload.filename,
+        scene_id: payload.scene.sceneId,
+        block_title: payload.scene.blockTitle,
+        scene_title: payload.scene.title,
+        location: payload.scene.location,
+        time_of_day: payload.scene.timeOfDay,
+        dramatic_function: payload.scene.dramaticFunction,
+        event_titles: payload.scene.eventTitles,
+        characters: payload.scene.characters,
+        environments: payload.scene.environments,
+        dialogues: payload.scene.dialogues,
+        events: relatedEvents,
+        source_refs: payload.scene.sourceRefs.map(toSourceRefDto),
+        source_text: payload.sourceText,
+        current_content: payload.currentContent
+      })
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "AI 剧本补全失败。");
+    }
+
+    const result = (await response.json()) as { content: string };
+    return result.content;
   }
 };

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bot, Save, Sparkles } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
+import { studioApi } from "../../shared/api";
 import { useCurrentNovel } from "../../shared/currentNovel";
 import { SourceTrace } from "../../shared/SourceTrace";
 import {
   buildDraftFromNovel,
-  createAiCompletion,
   getScreenplayDraft,
   saveScreenplayDraft,
   type ScreenplayDraft,
@@ -20,6 +20,7 @@ export function ScreenplayPage() {
   const [selectedSceneId, setSelectedSceneId] = useState("");
   const [editorValue, setEditorValue] = useState("");
   const [statusMessage, setStatusMessage] = useState("请选择一个场景开始编写。");
+  const [isCompleting, setIsCompleting] = useState(false);
 
   useEffect(() => {
     if (!currentNovel) return;
@@ -36,6 +37,7 @@ export function ScreenplayPage() {
     () => draft?.scenes.find((scene) => scene.sceneId === selectedSceneId) ?? draft?.scenes[0],
     [draft, selectedSceneId]
   );
+  const groupedScenes = useMemo(() => groupScenesByBlock(draft?.scenes ?? []), [draft?.scenes]);
 
   useEffect(() => {
     if (!selectedScene) return;
@@ -56,14 +58,29 @@ export function ScreenplayPage() {
     setStatusMessage("场景剧本已保存到本地。");
   }
 
-  function handleAiComplete() {
-    if (!draft || !selectedScene) return;
-    const completion = createAiCompletion(selectedScene);
-    const nextDraft = updateSceneDraft(draft, selectedScene.sceneId, completion, true);
-    setDraft(nextDraft);
-    saveScreenplayDraft(nextDraft);
-    setEditorValue(completion);
-    setStatusMessage("已使用规则版 AI 补全生成本场剧本。");
+  async function handleAiComplete() {
+    if (!draft || !selectedScene || !currentNovel) return;
+    setIsCompleting(true);
+    setStatusMessage("正在调用 DeepSeek 生成本场剧本...");
+    try {
+      const completion = await studioApi.completeSceneScreenplay({
+        documentId: currentNovel.documentId ?? draft.documentId,
+        filename: currentNovel.filename,
+        scene: selectedScene,
+        sourceText: currentNovel.sourceText,
+        events: currentNovel.events,
+        currentContent: editorValue
+      });
+      const nextDraft = updateSceneDraft(draft, selectedScene.sceneId, completion, true);
+      setDraft(nextDraft);
+      saveScreenplayDraft(nextDraft);
+      setEditorValue(completion);
+      setStatusMessage("AI 剧本补全已生成，并保存到本地草稿。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "AI 剧本补全失败。");
+    } finally {
+      setIsCompleting(false);
+    }
   }
 
   const scenes = draft?.scenes ?? [];
@@ -89,21 +106,26 @@ export function ScreenplayPage() {
               <small>{scenes.length} 场</small>
             </div>
             <div className="screenplay-scene-list">
-              {scenes.length > 0 ? (
-                scenes.map((scene, index) => (
-                  <button
-                    className={`screenplay-scene-item${scene.sceneId === selectedScene?.sceneId ? " active" : ""}`}
-                    type="button"
-                    key={scene.sceneId}
-                    onClick={() => handleSelectScene(scene.sceneId)}
-                  >
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <strong>{scene.title}</strong>
-                    <small>
-                      {scene.location} · {scene.timeOfDay}
-                    </small>
-                    <em>{scene.aiCompleted ? "已补全" : "待编写"}</em>
-                  </button>
+              {groupedScenes.length > 0 ? (
+                groupedScenes.map((group) => (
+                  <div className="screenplay-block-group" key={group.blockKey}>
+                    <div className="screenplay-block-title">{group.blockTitle}</div>
+                    {group.scenes.map((scene, index) => (
+                      <button
+                        className={`screenplay-scene-item${scene.sceneId === selectedScene?.sceneId ? " active" : ""}`}
+                        type="button"
+                        key={scene.sceneId}
+                        onClick={() => handleSelectScene(scene.sceneId)}
+                      >
+                        <span>{String(index + 1).padStart(2, "0")}</span>
+                        <strong>{scene.title}</strong>
+                        <small>
+                          {scene.location} · {scene.timeOfDay}
+                        </small>
+                        <em>{scene.aiCompleted ? "已补全" : "待编写"}</em>
+                      </button>
+                    ))}
+                  </div>
                 ))
               ) : (
                 <div className="compact-card">
@@ -122,13 +144,13 @@ export function ScreenplayPage() {
                     <span>当前场景</span>
                     <h2>{selectedScene.title}</h2>
                     <small>
-                      {selectedScene.location} · {selectedScene.timeOfDay} · {selectedScene.dramaticFunction}
+                      {selectedScene.blockTitle} · {selectedScene.location} · {selectedScene.timeOfDay} · {selectedScene.dramaticFunction}
                     </small>
                   </div>
                   <div className="toolbar">
-                    <button className="ghost-button" type="button" onClick={handleAiComplete}>
+                    <button className="ghost-button" type="button" disabled={isCompleting} onClick={handleAiComplete}>
                       <Bot size={16} />
-                      AI 自动补全
+                      {isCompleting ? "生成中..." : "AI 自动补全"}
                     </button>
                     <button className="primary-button" type="button" onClick={saveCurrentEditorValue}>
                       <Save size={16} />
@@ -145,6 +167,28 @@ export function ScreenplayPage() {
                   <div>
                     <strong>出场人物</strong>
                     <p>{selectedScene.characters.join("、") || "暂无人物"}</p>
+                  </div>
+                  <div>
+                    <strong>环境参考</strong>
+                    <p>
+                      {selectedScene.environments.length
+                        ? selectedScene.environments
+                            .map((environment) => [environment.atmosphere, environment.light, environment.sound].filter(Boolean).join(" / "))
+                            .filter(Boolean)
+                            .join("；") || "暂无环境细节"
+                        : "暂无环境细节"}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>对话参考</strong>
+                    <p className="dialogue-reference-list">
+                      {selectedScene.dialogues.length
+                        ? selectedScene.dialogues
+                            .slice(0, 3)
+                            .map((dialogue) => `${dialogue.speaker}：${dialogue.content}`)
+                            .join("\n")
+                        : "暂无关联对话"}
+                    </p>
                   </div>
                   <SourceTrace refs={selectedScene.sourceRefs} />
                 </div>
@@ -171,4 +215,20 @@ export function ScreenplayPage() {
       )}
     </section>
   );
+}
+
+function groupScenesByBlock(scenes: ScreenplayDraft["scenes"]) {
+  const groups = new Map<string, ScreenplayDraft["scenes"]>();
+  for (const scene of scenes) {
+    const key = scene.blockId || scene.blockTitle || "未分组总场景";
+    const items = groups.get(key) ?? [];
+    items.push(scene);
+    groups.set(key, items);
+  }
+
+  return Array.from(groups.entries()).map(([blockKey, groupScenes]) => ({
+    blockKey,
+    blockTitle: groupScenes[0]?.blockTitle || "未分组总场景",
+    scenes: groupScenes
+  }));
 }

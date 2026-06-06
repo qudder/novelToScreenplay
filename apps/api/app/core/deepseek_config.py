@@ -11,6 +11,7 @@ class DeepSeekConfig(BaseModel):
     timeout_seconds: int = 60
     max_concurrent_chapter_requests: int = 3
     prompt_path: Path = Path(__file__).resolve().parents[1] / "config" / "chapter_analysis_prompt.md"
+    screenplay_prompt_path: Path = Path(__file__).resolve().parents[1] / "config" / "screenplay_completion_prompt.md"
     cache_dir: Path = Path(__file__).resolve().parents[1] / ".cache" / "deepseek"
     debug_dir: Path = Path(__file__).resolve().parents[1] / ".debug" / "deepseek"
 

@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { Chapter, Event, Scene, SourceRef } from "./types";
+import type { Chapter, Event, NarrativeBlock, Scene, SourceRef, SubScene } from "./types";
 
 export type ComparePayload =
   | {
@@ -18,7 +18,7 @@ export type ComparePayload =
   | {
       type: "scene";
       title: string;
-      scene: Scene;
+      scene: Scene | NarrativeBlock | SubScene;
       refs: SourceRef[];
     };
 
@@ -237,15 +237,42 @@ function renderPayloadData(payload: ComparePayload) {
       <dt>场景</dt>
       <dd>{payload.scene.title}</dd>
       <dt>地点</dt>
-      <dd>{payload.scene.location || "地点待定"}</dd>
+      <dd>{getSceneLocation(payload.scene) || "地点待定"}</dd>
       <dt>时间</dt>
-      <dd>{payload.scene.timeOfDay || "时间待定"}</dd>
+      <dd>{getSceneTime(payload.scene) || "时间待定"}</dd>
       <dt>戏剧功能</dt>
-      <dd>{payload.scene.dramaticFunction || "功能待定"}</dd>
-      <dt>改编说明</dt>
-      <dd>{payload.scene.adaptationNote || "暂无说明"}</dd>
+      <dd>{getSceneFunction(payload.scene) || "功能待定"}</dd>
+      <dt>冲突或说明</dt>
+      <dd>{getSceneNote(payload.scene) || "暂无说明"}</dd>
       <dt>关联事件</dt>
-      <dd>{(payload.scene.eventTitles?.length ? payload.scene.eventTitles : payload.scene.eventIds).join("、") || "暂无关联事件"}</dd>
+      <dd>{getSceneEventTitles(payload.scene).join("、") || "暂无关联事件"}</dd>
     </dl>
   );
+}
+
+function getSceneLocation(scene: Scene | NarrativeBlock | SubScene) {
+  if ("locationScope" in scene) return scene.locationScope;
+  return scene.location;
+}
+
+function getSceneTime(scene: Scene | NarrativeBlock | SubScene) {
+  if ("storyTime" in scene) return scene.storyTime;
+  if ("timeText" in scene) return scene.timeText || scene.timeOfDay;
+  return scene.timeOfDay;
+}
+
+function getSceneFunction(scene: Scene | NarrativeBlock | SubScene) {
+  if ("dramaticGoal" in scene) return scene.dramaticGoal;
+  return scene.dramaticFunction;
+}
+
+function getSceneNote(scene: Scene | NarrativeBlock | SubScene) {
+  if ("mainConflict" in scene) return scene.mainConflict || scene.summary;
+  if ("adaptationNote" in scene) return scene.adaptationNote;
+  return scene.dramaticFunction;
+}
+
+function getSceneEventTitles(scene: Scene | NarrativeBlock | SubScene) {
+  if ("subSceneIds" in scene) return scene.subSceneIds;
+  return (scene.eventTitles?.length ? scene.eventTitles : scene.eventIds) ?? [];
 }
