@@ -76,6 +76,16 @@ export function ImportPage() {
         sourceText: result.sourceText,
         chapters: result.chapters,
         characters: result.characters,
+        locations: result.locations,
+        timeMarkers: result.timeMarkers,
+        events: result.events,
+        relationships: result.relationships,
+        conflicts: result.conflicts,
+        dialogues: result.dialogues,
+        actions: result.actions,
+        motivations: result.motivations,
+        causalLinks: result.causalLinks,
+        scenes: result.scenes,
         importedAt: new Date().toISOString()
       });
     } catch (error) {

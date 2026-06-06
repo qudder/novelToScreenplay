@@ -2,7 +2,7 @@ from fastapi import UploadFile
 
 from app.domain.models import ImportResult, Workspace
 from app.repositories.memory_repository import memory_repository
-from app.services.character_llm_extractor import extract_characters_for_chapters
+from app.services.chapter_analysis_service import analyze_chapters
 from app.services.document_parser import extract_text, split_into_chapters
 
 
@@ -14,13 +14,24 @@ class WorkspaceService:
         content = await file.read()
         source_text = extract_text(file.filename or "untitled", content)
         chapters = split_into_chapters(source_text)
-        characters = await extract_characters_for_chapters(chapters, source_text)
+        analysis = await analyze_chapters(chapters, source_text)
         return ImportResult(
             filename=file.filename or "untitled",
             status="parsed",
-            message=f"Parsed {len(chapters)} chapters and extracted {len(characters)} character candidates.",
+            message=f"Parsed {len(chapters)} chapters and extracted full narrative analysis.",
             chapters=chapters,
-            characters=characters,
+            characters=analysis.characters,
+            locations=analysis.locations,
+            time_markers=analysis.time_markers,
+            events=analysis.events,
+            relationships=analysis.relationships,
+            conflicts=analysis.conflicts,
+            dialogues=analysis.dialogues,
+            actions=analysis.actions,
+            motivations=analysis.motivations,
+            causal_links=analysis.causal_links,
+            scenes=analysis.scenes,
+            chapter_analyses=analysis.chapter_analyses,
             source_text=source_text,
         )
 

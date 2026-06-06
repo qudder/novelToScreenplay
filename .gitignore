@@ -4,6 +4,7 @@ dist/
 .env
 apps/api/.env
 apps/api/.cache/
+apps/api/app/.cache/
 __pycache__/
 *.pyc
 .pytest_cache/

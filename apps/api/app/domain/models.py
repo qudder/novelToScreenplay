@@ -23,30 +23,128 @@ class Character(BaseModel):
 
 
 class Relationship(BaseModel):
-    id: str
+    id: str = ""
     source: str
     target: str
-    type: Literal["同盟", "敌对", "亲属", "暧昧", "师徒"]
+    type: str
     strength: int
+    evidence: str = ""
 
 
 class Event(BaseModel):
-    id: str
+    id: str = ""
     chapter_id: str
     title: str
     summary: str
     conflict: str
     character_ids: list[str]
+    characters: list[str] = []
+    location: str = ""
+    time_text: str = ""
+    consequence: str = ""
 
 
 class Scene(BaseModel):
-    id: str
+    id: str = ""
     title: str
     location: str
     time_of_day: str
     event_ids: list[str]
     character_ids: list[str]
     dramatic_function: str
+    event_titles: list[str] = []
+    characters: list[str] = []
+    adaptation_note: str = ""
+
+
+class Location(BaseModel):
+    id: str = ""
+    name: str
+    type: str = ""
+    description: str = ""
+    evidence: str = ""
+    chapter_id: str = ""
+
+
+class TimeMarker(BaseModel):
+    id: str = ""
+    chapter_id: str = ""
+    time_text: str
+    normalized_time: str = ""
+    time_of_day: str = ""
+    sequence_order: int = 0
+
+
+class Conflict(BaseModel):
+    id: str = ""
+    chapter_id: str = ""
+    conflict_type: str = ""
+    participants: list[str] = []
+    desire: str = ""
+    obstacle: str = ""
+    outcome: str = ""
+    evidence: str = ""
+
+
+class Dialogue(BaseModel):
+    id: str = ""
+    chapter_id: str = ""
+    speaker: str = ""
+    listener: str = ""
+    content: str = ""
+    emotion: str = ""
+    source_text: str = ""
+
+
+class Action(BaseModel):
+    id: str = ""
+    chapter_id: str = ""
+    character: str = ""
+    action: str = ""
+    object: str = ""
+    location: str = ""
+    visuality_score: int = 0
+
+
+class Motivation(BaseModel):
+    id: str = ""
+    chapter_id: str = ""
+    character: str = ""
+    goal: str = ""
+    fear: str = ""
+    secret: str = ""
+    motivation: str = ""
+
+
+class CausalLink(BaseModel):
+    id: str = ""
+    chapter_id: str = ""
+    cause_event: str = ""
+    effect_event: str = ""
+    relation_type: str = ""
+    evidence: str = ""
+
+
+class EmotionArc(BaseModel):
+    emotion: str = ""
+    intensity: int = 0
+    tension: int = 0
+
+
+class ChapterAnalysis(BaseModel):
+    chapter_id: str
+    characters: list[Character] = []
+    locations: list[Location] = []
+    time_markers: list[TimeMarker] = []
+    events: list[Event] = []
+    relationships: list[Relationship] = []
+    conflicts: list[Conflict] = []
+    dialogues: list[Dialogue] = []
+    actions: list[Action] = []
+    motivations: list[Motivation] = []
+    causal_links: list[CausalLink] = []
+    scene_candidates: list[Scene] = []
+    emotion_arc: EmotionArc = EmotionArc()
 
 
 class Workspace(BaseModel):
@@ -63,4 +161,15 @@ class ImportResult(BaseModel):
     message: str
     chapters: list[Chapter] = []
     characters: list[Character] = []
+    locations: list[Location] = []
+    time_markers: list[TimeMarker] = []
+    events: list[Event] = []
+    relationships: list[Relationship] = []
+    conflicts: list[Conflict] = []
+    dialogues: list[Dialogue] = []
+    actions: list[Action] = []
+    motivations: list[Motivation] = []
+    causal_links: list[CausalLink] = []
+    scenes: list[Scene] = []
+    chapter_analyses: list[ChapterAnalysis] = []
     source_text: str = ""
