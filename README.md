@@ -25,6 +25,8 @@ npm install
 npm run dev
 ```
 
+开发环境下，前端默认通过 Vite 代理请求 `/api`，后端需运行在 `http://127.0.0.1:8000`。
+
 ### 后端
 
 ```bash

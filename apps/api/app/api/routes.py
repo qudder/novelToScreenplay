@@ -1,6 +1,7 @@
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.domain.models import ImportResult, Workspace
+from app.services.document_parser import UnsupportedDocumentError
 from app.services.workspace_service import workspace_service
 
 router = APIRouter()
@@ -38,5 +39,7 @@ def get_scenes():
 
 @router.post("/documents/import", response_model=ImportResult)
 async def import_document(file: UploadFile = File(...)) -> ImportResult:
-    return await workspace_service.import_document(file)
-
+    try:
+        return await workspace_service.import_document(file)
+    except UnsupportedDocumentError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
