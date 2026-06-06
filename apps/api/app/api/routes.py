@@ -1,4 +1,6 @@
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from typing import Any
+
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from app.domain.models import AnalysisResult, AnalysisStartResult, ImportResult, Workspace
@@ -14,6 +16,14 @@ logger = get_logger("api.routes")
 
 class DeepSeekApiKeyPayload(BaseModel):
     api_key: str = Field(min_length=1)
+
+
+class ScreenplayExportPayload(BaseModel):
+    documentId: str = ""
+    filename: str = ""
+    title: str = "剧本草稿"
+    scenes: list[dict[str, Any]] = []
+    updatedAt: str = ""
 
 
 @router.get("/workspace", response_model=Workspace)
@@ -129,3 +139,68 @@ def save_deepseek_settings(payload: DeepSeekApiKeyPayload) -> dict[str, bool]:
     settings_service.save_deepseek_api_key(payload.api_key)
     logger.info("DeepSeek API Key 已保存：配置状态=true")
     return {"configured": True}
+
+
+@router.post("/screenplays/export")
+def export_screenplay(payload: ScreenplayExportPayload) -> Response:
+    logger.info("收到剧本导出请求：文档ID=%s，场景数=%s", payload.documentId, len(payload.scenes))
+    yaml_text = _to_yaml(
+        {
+            "screenplay": {
+                "title": payload.title,
+                "source": {
+                    "document_id": payload.documentId,
+                    "filename": payload.filename,
+                },
+                "updated_at": payload.updatedAt,
+                "scenes": payload.scenes,
+            }
+        }
+    )
+    return Response(content=yaml_text, media_type="application/x-yaml; charset=utf-8")
+
+
+def _to_yaml(value: Any, indent: int = 0) -> str:
+    lines = _yaml_lines(value, indent)
+    return "\n".join(lines) + "\n"
+
+
+def _yaml_lines(value: Any, indent: int = 0) -> list[str]:
+    prefix = " " * indent
+    if isinstance(value, dict):
+        lines: list[str] = []
+        for key, item in value.items():
+            if isinstance(item, (dict, list)):
+                lines.append(f"{prefix}{key}:")
+                lines.extend(_yaml_lines(item, indent + 2))
+            else:
+                lines.append(f"{prefix}{key}: {_yaml_scalar(item)}")
+        return lines
+
+    if isinstance(value, list):
+        if not value:
+            return [f"{prefix}[]"]
+        lines = []
+        for item in value:
+            if isinstance(item, (dict, list)):
+                lines.append(f"{prefix}-")
+                lines.extend(_yaml_lines(item, indent + 2))
+            else:
+                lines.append(f"{prefix}- {_yaml_scalar(item)}")
+        return lines
+
+    return [f"{prefix}{_yaml_scalar(value)}"]
+
+
+def _yaml_scalar(value: Any) -> str:
+    if value is None:
+        return '""'
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    if not text:
+        return '""'
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{escaped}"'

@@ -6,6 +6,7 @@ import { RelationshipsPage } from "../features/relationships/RelationshipsPage";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { ScenesPage } from "../features/scenes/ScenesPage";
 import { ScreenplayPage } from "../features/screenplay/ScreenplayPage";
+import { ScreenplayOverviewPage } from "../features/screenplay/ScreenplayOverviewPage";
 
 export const router = createBrowserRouter([
   {
@@ -18,8 +19,8 @@ export const router = createBrowserRouter([
       { path: "relationships", element: <RelationshipsPage /> },
       { path: "timeline", element: <TimelinePage /> },
       { path: "scenes", element: <ScenesPage /> },
-      { path: "screenplay", element: <ScreenplayPage /> }
+      { path: "screenplay", element: <ScreenplayPage /> },
+      { path: "screenplay-overview", element: <ScreenplayOverviewPage /> }
     ]
   }
 ]);
-

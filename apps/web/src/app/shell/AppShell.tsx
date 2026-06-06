@@ -1,13 +1,6 @@
 import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import {
-  BookOpen,
-  Clapperboard,
-  GitBranch,
-  Layers,
-  Upload,
-  Users
-} from "lucide-react";
+import { BookOpen, Clapperboard, FileText, GitBranch, Layers, Upload, Users } from "lucide-react";
 import { studioApi } from "../../shared/api";
 import { getCurrentNovel, saveCurrentNovel } from "../../shared/currentNovel";
 import type { CurrentNovel } from "../../shared/types";
@@ -18,7 +11,8 @@ const navItems = [
   { to: "/relationships", label: "人物关系图", icon: GitBranch },
   { to: "/timeline", label: "事件时间线", icon: BookOpen },
   { to: "/scenes", label: "场景拆分板", icon: Layers },
-  { to: "/screenplay", label: "剧本生成", icon: Clapperboard }
+  { to: "/screenplay", label: "剧本生成", icon: Clapperboard },
+  { to: "/screenplay-overview", label: "剧本总览", icon: FileText }
 ];
 
 export function AppShell() {
@@ -53,7 +47,7 @@ export function AppShell() {
           timer = window.setTimeout(refreshStoredAnalysis, 2000);
         }
       } catch {
-        // Keep the local snapshot usable when the API is offline or the in-memory document has expired.
+        // 后端不可用或内存文档过期时，继续保留浏览器本地快照。
       }
     }
 
