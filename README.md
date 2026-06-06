@@ -25,7 +25,7 @@ npm install
 npm run dev
 ```
 
-开发环境下，前端默认通过 Vite 代理请求 `/api`，后端需运行在 `http://127.0.0.1:8010`。
+开发环境下，前端默认通过 Vite 代理请求 `/api`，后端需运行在 `http://127.0.0.1:8000`。
 
 ### 后端
 
@@ -34,7 +34,7 @@ cd apps/api
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8010
+uvicorn app.main:app --reload --port 8000
 ```
 
 章节叙事信息抽取使用 DeepSeek API。请在本地创建 `apps/api/.env`，不要提交该文件：
