@@ -7,6 +7,11 @@ from app.domain.models import AnalysisResult, AnalysisStartResult, ImportResult,
 from app.core.logging_config import get_logger
 from app.services.document_parser import UnsupportedDocumentError
 from app.services.deepseek_client import DeepSeekConfigurationError
+from app.services.screenplay_generation_service import (
+    ScreenplayCompletionRequest,
+    ScreenplayCompletionResult,
+    complete_scene_screenplay,
+)
 from app.services.settings_service import settings_service
 from app.services.workspace_service import workspace_service
 
@@ -158,6 +163,19 @@ def export_screenplay(payload: ScreenplayExportPayload) -> Response:
         }
     )
     return Response(content=yaml_text, media_type="application/x-yaml; charset=utf-8")
+
+
+@router.post("/screenplays/complete-scene", response_model=ScreenplayCompletionResult)
+async def complete_screenplay_scene(payload: ScreenplayCompletionRequest) -> ScreenplayCompletionResult:
+    logger.info("收到场景剧本补全请求：文档ID=%s，场景ID=%s，标题=%s", payload.document_id, payload.scene_id, payload.scene_title)
+    try:
+        return await complete_scene_screenplay(payload)
+    except DeepSeekConfigurationError as error:
+        logger.warning("场景剧本补全失败：DeepSeek 配置缺失，场景ID=%s", payload.scene_id)
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("场景剧本补全失败：场景ID=%s，错误=%s", payload.scene_id, error)
+        raise HTTPException(status_code=500, detail=f"场景剧本补全失败：{error}") from error
 
 
 def _to_yaml(value: Any, indent: int = 0) -> str:

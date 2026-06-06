@@ -88,6 +88,65 @@ class DeepSeekClient:
         logger.info("DeepSeek 响应解析完成：调试上下文=%s，字段=%s", debug_context, list(parsed.keys()))
         return parsed
 
+    async def generate_text(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        debug_context: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise DeepSeekConfigurationError(
+                "未配置 DEEPSEEK_API_KEY。请先在前端 DeepSeek 配置中保存 API Key。"
+            )
+
+        debug_dir = _prepare_debug_dir(debug_context)
+        logger.info("准备 DeepSeek 文本生成请求：模型=%s，调试上下文=%s，调试目录=%s", deepseek_config.model, debug_context, debug_dir)
+        payload = {
+            "model": deepseek_config.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": deepseek_config.temperature if temperature is None else temperature,
+            "max_tokens": deepseek_config.max_tokens if max_tokens is None else max_tokens,
+            "stream": False,
+        }
+        _write_debug_json(debug_dir, "request.json", _redact_request(payload))
+        _write_debug_text(debug_dir, "system_prompt.md", system_prompt)
+        _write_debug_text(debug_dir, "user_prompt.md", user_prompt)
+
+        try:
+            async with httpx.AsyncClient(timeout=deepseek_config.timeout_seconds) as client:
+                response = await client.post(
+                    f"{deepseek_config.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                _write_debug_text(debug_dir, "raw_response.txt", response.text)
+                response.raise_for_status()
+        except Exception as error:
+            _write_debug_text(debug_dir, "error.txt", repr(error))
+            logger.exception("DeepSeek 文本生成请求失败：调试上下文=%s，错误=%s", debug_context, error)
+            raise
+
+        data = response.json()
+        choice = data["choices"][0]
+        finish_reason = choice.get("finish_reason")
+        content = str(choice["message"].get("content", "")).strip()
+        if not content:
+            raise RuntimeError("DeepSeek 返回了空剧本文本。")
+        if finish_reason == "length":
+            logger.warning("DeepSeek 剧本文本可能被截断：调试上下文=%s，max_tokens=%s", debug_context, payload["max_tokens"])
+        _write_debug_text(debug_dir, "generated_screenplay.txt", content)
+        logger.info("DeepSeek 文本生成完成：调试上下文=%s，字符数=%s", debug_context, len(content))
+        return content
+
 
 def _parse_json_content(content: str) -> dict[str, Any]:
     cleaned = _strip_code_fence(content.strip())
@@ -104,7 +163,7 @@ def _parse_json_content(content: str) -> dict[str, Any]:
             raise DeepSeekResponseParseError(str(second_error)) from second_error
 
     if not isinstance(parsed, dict):
-        raise DeepSeekResponseParseError(f"Expected JSON object, got {type(parsed).__name__}.")
+        raise DeepSeekResponseParseError(f"期望 JSON object，实际得到 {type(parsed).__name__}。")
     return parsed
 
 

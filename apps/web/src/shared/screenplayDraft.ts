@@ -1,9 +1,11 @@
-import type { CurrentNovel, Scene } from "./types";
+import type { CurrentNovel, DialogueDto, EnvironmentInfo, Scene, ShotPlan, SourceRef, SubScene } from "./types";
 
 const STORAGE_KEY = "novel-to-screenplay.screenplayDraft";
 
 export type SceneScreenplayDraft = {
   sceneId: string;
+  blockId: string;
+  blockTitle: string;
   title: string;
   location: string;
   timeOfDay: string;
@@ -11,7 +13,10 @@ export type SceneScreenplayDraft = {
   eventIds: string[];
   eventTitles: string[];
   characters: string[];
-  sourceRefs: Scene["sourceRefs"];
+  environments: EnvironmentInfo[];
+  shotPlans: ShotPlan[];
+  dialogues: DialogueDto[];
+  sourceRefs: SourceRef[];
   content: string;
   updatedAt: string;
   aiCompleted: boolean;
@@ -28,19 +33,32 @@ export type ScreenplayDraft = {
 export function buildDraftFromNovel(novel: CurrentNovel): ScreenplayDraft {
   const existingDraft = getScreenplayDraft();
   const existingScenes = new Map(existingDraft?.scenes.map((scene) => [scene.sceneId, scene]));
-  const scenes = novel.scenes.map((scene, index) => {
+  const sceneMaterials = buildSceneMaterials(novel);
+  const scenes = sceneMaterials.map((scene, index) => {
     const existingScene = existingScenes.get(scene.id);
+    const eventTitleSet = new Set(scene.eventTitles);
+    const eventIdSet = new Set(scene.eventIds);
+    const relatedEvents = novel.events.filter((event) => eventIdSet.has(event.id) || eventTitleSet.has(event.title));
+    const relatedDialogues = collectSceneDialogues(novel.dialogues, relatedEvents, eventTitleSet);
+    const relatedEnvironments = collectSceneEnvironments(novel.environments, scene, eventTitleSet);
+    const relatedShotPlans = collectSceneShotPlans(novel.shotPlans ?? [], scene, eventTitleSet);
+
     return {
       sceneId: scene.id,
+      blockId: scene.blockId,
+      blockTitle: scene.blockTitle,
       title: scene.title || `场景 ${index + 1}`,
       location: scene.location || "地点待定",
       timeOfDay: scene.timeOfDay || "时间待定",
       dramaticFunction: scene.dramaticFunction || "功能待定",
       eventIds: scene.eventIds,
-      eventTitles: scene.eventTitles ?? [],
+      eventTitles: scene.eventTitles,
       characters: scene.characters ?? [],
+      environments: relatedEnvironments,
+      shotPlans: relatedShotPlans,
+      dialogues: relatedDialogues,
       sourceRefs: scene.sourceRefs ?? [],
-      content: existingScene?.content || createInitialSceneContent(scene),
+      content: existingScene?.content || createInitialSceneContent(scene, relatedEnvironments, relatedShotPlans, relatedDialogues),
       updatedAt: existingScene?.updatedAt || new Date().toISOString(),
       aiCompleted: existingScene?.aiCompleted ?? false
     };
@@ -60,7 +78,7 @@ export function getScreenplayDraft(): ScreenplayDraft | null {
   if (!raw) return null;
 
   try {
-    return JSON.parse(raw) as ScreenplayDraft;
+    return normalizeScreenplayDraft(JSON.parse(raw) as ScreenplayDraft);
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
     return null;
@@ -92,30 +110,165 @@ export function updateSceneDraft(draft: ScreenplayDraft, sceneId: string, conten
 export function createAiCompletion(scene: SceneScreenplayDraft) {
   const heading = `内景 ${scene.location} - ${normalizeTimeOfDay(scene.timeOfDay)}`;
   const characters = scene.characters.length ? scene.characters.join("、") : "相关人物";
-  const events = scene.eventTitles.length ? scene.eventTitles.join("；") : scene.eventIds.join("；");
-  const functionLine = scene.dramaticFunction ? `本场功能是${scene.dramaticFunction}。` : "本场承担推进剧情的功能。";
+  const environmentLine = formatEnvironmentLine(scene.environments);
+  const shotLine = formatShotPlanLine(scene.shotPlans);
+  const dialogueLines = scene.dialogues.length
+    ? scene.dialogues
+        .slice(0, 4)
+        .map((dialogue) => `${dialogue.speaker || "角色"}\n${dialogue.content || dialogue.source_text}`)
+        .join("\n\n")
+    : `${scene.characters[0] ?? "角色"}\n我们不能再停在原地。\n\n${scene.characters[1] ?? scene.characters[0] ?? "对方"}\n那就拿出能改变局面的证据。`;
 
   return `${heading}
 
-${scene.location}中，${characters}进入同一场冲突。${functionLine}
+${environmentLine}
 
-${events ? `画面围绕「${events}」展开。` : "人物在沉默和试探中推动局面变化。"}
+${shotLine}
 
-${scene.characters[0] ?? "角色"}
-我们不能再停在原地。
+${scene.location}中，${characters}进入同一场冲突。本场功能是${scene.dramaticFunction}。
 
-${scene.characters[1] ?? scene.characters[0] ?? "对方"}
-那就拿出能改变局面的证据。
+${dialogueLines}
 
 场面短暂停住，新的选择摆在众人面前。`;
 }
 
-function createInitialSceneContent(scene: Scene) {
+function createInitialSceneContent(scene: SceneMaterial, environments: EnvironmentInfo[], shotPlans: ShotPlan[], dialogues: DialogueDto[]) {
   const heading = `内景 ${scene.location || "地点待定"} - ${normalizeTimeOfDay(scene.timeOfDay)}`;
-  const note = scene.adaptationNote ? `\n\n改编提示：${scene.adaptationNote}` : "";
+  const environmentNote = environments.length ? `\n\n环境参考：${formatEnvironmentLine(environments)}` : "";
+  const shotNote = shotPlans.length ? `\n\n分镜参考：${formatShotPlanLine(shotPlans)}` : "";
+  const dialogueNote = dialogues.length
+    ? `\n\n对话参考：${dialogues
+        .slice(0, 3)
+        .map((dialogue) => `${dialogue.speaker}：${dialogue.content}`)
+        .join("\n")}`
+    : "";
+  const adaptationNote = scene.adaptationNote ? `\n\n改编提示：${scene.adaptationNote}` : "";
   return `${heading}
 
-请在这里编写本场动作、对白和转场。${note}`;
+请在这里围绕环境、分镜、人物行动和关键对话编写本场剧本。${environmentNote}${shotNote}${dialogueNote}${adaptationNote}`;
+}
+
+type SceneMaterial = {
+  id: string;
+  blockId: string;
+  blockTitle: string;
+  title: string;
+  location: string;
+  timeOfDay: string;
+  dramaticFunction: string;
+  eventIds: string[];
+  eventTitles: string[];
+  environmentIds: string[];
+  shotIds: string[];
+  characters: string[];
+  sourceRefs: SourceRef[];
+  adaptationNote?: string;
+};
+
+function buildSceneMaterials(novel: CurrentNovel): SceneMaterial[] {
+  const subScenes = novel.subScenes ?? [];
+  const narrativeBlocks = novel.narrativeBlocks ?? [];
+  if (subScenes.length > 0) {
+    const blockById = new Map(narrativeBlocks.map((block) => [block.id, block]));
+    return subScenes.map((subScene) => {
+      const block = blockById.get(subScene.blockId);
+      return {
+        id: subScene.id,
+        blockId: subScene.blockId,
+        blockTitle: block?.title ?? "未分组总场景",
+        title: subScene.title,
+        location: subScene.location,
+        timeOfDay: subScene.timeText || subScene.timeOfDay,
+        dramaticFunction: subScene.dramaticFunction,
+        eventIds: subScene.eventIds,
+        eventTitles: subScene.eventTitles,
+        environmentIds: subScene.environmentIds,
+        shotIds: subScene.shotIds,
+        characters: subScene.characters,
+        sourceRefs: subScene.sourceRefs ?? []
+      };
+    });
+  }
+
+  return novel.scenes.map((scene) => ({
+    id: scene.id,
+    blockId: "",
+    blockTitle: "旧版场景候选",
+    title: scene.title,
+    location: scene.location,
+    timeOfDay: scene.timeOfDay,
+    dramaticFunction: scene.dramaticFunction,
+    eventIds: scene.eventIds,
+    eventTitles: scene.eventTitles ?? [],
+    environmentIds: [],
+    shotIds: [],
+    characters: scene.characters ?? [],
+    sourceRefs: scene.sourceRefs ?? [],
+    adaptationNote: scene.adaptationNote
+  }));
+}
+
+function collectSceneDialogues(dialogues: DialogueDto[], relatedEvents: CurrentNovel["events"], eventTitleSet: Set<string>) {
+  const eventIdSet = new Set(relatedEvents.map((event) => event.id));
+  return dialogues.filter((dialogue) => {
+    if (dialogue.event_id && eventIdSet.has(dialogue.event_id)) return true;
+    if (dialogue.event_title && eventTitleSet.has(dialogue.event_title)) return true;
+    return relatedEvents.some((event) => event.dialogueIds?.includes(dialogue.id));
+  });
+}
+
+function collectSceneEnvironments(environments: EnvironmentInfo[], scene: SceneMaterial | SubScene, eventTitleSet: Set<string>) {
+  const environmentIdSet = new Set("environmentIds" in scene ? scene.environmentIds : []);
+  return environments.filter((environment) => {
+    if (environmentIdSet.has(environment.id)) return true;
+    if (environment.sceneTitle && environment.sceneTitle === scene.title) return true;
+    if (environment.location && environment.location === scene.location) return true;
+    return environment.eventTitles.some((eventTitle) => eventTitleSet.has(eventTitle));
+  });
+}
+
+function collectSceneShotPlans(shotPlans: ShotPlan[], scene: SceneMaterial, eventTitleSet: Set<string>) {
+  const shotIdSet = new Set(scene.shotIds);
+  return shotPlans
+    .filter((shotPlan) => {
+      if (shotIdSet.has(shotPlan.id)) return true;
+      if (shotPlan.sceneTitle && shotPlan.sceneTitle === scene.title) return true;
+      return Boolean(shotPlan.eventTitle && eventTitleSet.has(shotPlan.eventTitle));
+    })
+    .sort((left, right) => left.sequenceOrder - right.sequenceOrder);
+}
+
+function formatEnvironmentLine(environments: EnvironmentInfo[]) {
+  if (!environments.length) return "环境尚未明确，先用人物动作和场面调度建立空间。";
+  const environment = environments[0];
+  const details = [
+    environment.weather ? `天气：${environment.weather}` : "",
+    environment.light ? `光线：${environment.light}` : "",
+    environment.sound ? `声音：${environment.sound}` : "",
+    environment.atmosphere ? `氛围：${environment.atmosphere}` : "",
+    environment.props.length ? `道具：${environment.props.join("、")}` : "",
+    environment.visualDetails.length ? `视觉：${environment.visualDetails.join("、")}` : ""
+  ].filter(Boolean);
+  return details.join("；") || "环境尚未明确，先用人物动作和场面调度建立空间。";
+}
+
+function formatShotPlanLine(shotPlans: ShotPlan[]) {
+  if (!shotPlans.length) return "分镜尚未明确，生成时需根据动作和情绪变化安排视角转换。";
+  return shotPlans
+    .slice(0, 5)
+    .map((shot) =>
+      [
+        shot.sequenceOrder ? `镜头${shot.sequenceOrder}` : "镜头",
+        shot.shotType,
+        shot.viewpoint,
+        shot.composition,
+        shot.cameraMovement,
+        shot.visualFocus ? `焦点：${shot.visualFocus}` : ""
+      ]
+        .filter(Boolean)
+        .join("｜")
+    )
+    .join("\n");
 }
 
 function normalizeTimeOfDay(timeOfDay: string) {
@@ -125,4 +278,14 @@ function normalizeTimeOfDay(timeOfDay: string) {
   if (value.includes("DUSK") || timeOfDay.includes("昏")) return "昏";
   if (value.includes("DAY") || timeOfDay.includes("昼") || timeOfDay.includes("日")) return "日";
   return timeOfDay || "时间待定";
+}
+
+function normalizeScreenplayDraft(draft: ScreenplayDraft): ScreenplayDraft {
+  return {
+    ...draft,
+    scenes: (draft.scenes ?? []).map((scene) => ({
+      ...scene,
+      shotPlans: scene.shotPlans ?? []
+    }))
+  };
 }

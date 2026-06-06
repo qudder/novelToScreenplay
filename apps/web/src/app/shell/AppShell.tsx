@@ -124,6 +124,8 @@ function mergeAnalysisResult(
     ...updatedNovel,
     characters: result.characters,
     locations: result.locations,
+    environments: result.environments,
+    shotPlans: result.shotPlans,
     timeMarkers: result.timeMarkers,
     events: result.events,
     relationships: result.relationships,
@@ -133,6 +135,8 @@ function mergeAnalysisResult(
     motivations: result.motivations,
     causalLinks: result.causalLinks,
     scenes: result.scenes,
+    narrativeBlocks: result.narrativeBlocks,
+    subScenes: result.subScenes,
     emptyChapterIds: result.emptyChapterIds
   };
 }
@@ -150,6 +154,8 @@ function mergeDocumentResult(
     chapters: result.chapters,
     characters: result.characters,
     locations: result.locations,
+    environments: result.environments,
+    shotPlans: result.shotPlans,
     timeMarkers: result.timeMarkers,
     events: result.events,
     relationships: result.relationships,
@@ -158,6 +164,8 @@ function mergeDocumentResult(
     actions: result.actions,
     motivations: result.motivations,
     causalLinks: result.causalLinks,
-    scenes: result.scenes
+    scenes: result.scenes,
+    narrativeBlocks: result.narrativeBlocks,
+    subScenes: result.subScenes
   };
 }
