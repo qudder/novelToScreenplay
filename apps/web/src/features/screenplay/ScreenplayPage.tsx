@@ -6,7 +6,6 @@ import { useCurrentNovel } from "../../shared/currentNovel";
 import { SourceTrace } from "../../shared/SourceTrace";
 import {
   buildDraftFromNovel,
-  getScreenplayDraft,
   saveScreenplayDraft,
   type ScreenplayDraft,
   updateSceneDraft
@@ -16,7 +15,7 @@ import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 export function ScreenplayPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const currentNovel = useCurrentNovel();
-  const [draft, setDraft] = useState<ScreenplayDraft | null>(() => getScreenplayDraft());
+  const [draft, setDraft] = useState<ScreenplayDraft | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState("");
   const [editorValue, setEditorValue] = useState("");
   const [statusMessage, setStatusMessage] = useState("请选择一个场景开始编写。");
@@ -28,7 +27,7 @@ export function ScreenplayPage() {
     const nextDraft = buildDraftFromNovel(currentNovel);
     setDraft(nextDraft);
     saveScreenplayDraft(nextDraft);
-    if (!selectedSceneId && nextDraft.scenes[0]) {
+    if ((!selectedSceneId || !nextDraft.scenes.some((scene) => scene.sceneId === selectedSceneId)) && nextDraft.scenes[0]) {
       setSelectedSceneId(nextDraft.scenes[0].sceneId);
     }
   }, [currentNovel, selectedSceneId]);

@@ -19,12 +19,18 @@ export function AppShell() {
   useEffect(() => {
     let cancelled = false;
     let timer: number | undefined;
+    let lastRefreshKey = "";
 
     async function refreshStoredAnalysis() {
       const currentNovel = getCurrentNovel();
       if (!currentNovel?.documentId) {
         return;
       }
+      const refreshKey = `${currentNovel.documentId}:${currentNovel.analysisStatus ?? "idle"}`;
+      if (refreshKey === lastRefreshKey && currentNovel.analysisStatus !== "running") {
+        return;
+      }
+      lastRefreshKey = refreshKey;
 
       try {
         const documentResult = await getOrRestoreDocument(currentNovel);
@@ -52,12 +58,14 @@ export function AppShell() {
     }
 
     refreshStoredAnalysis();
+    window.addEventListener("current-novel-updated", refreshStoredAnalysis);
 
     return () => {
       cancelled = true;
       if (timer) {
         window.clearTimeout(timer);
       }
+      window.removeEventListener("current-novel-updated", refreshStoredAnalysis);
     };
   }, []);
 

@@ -1,15 +1,21 @@
 import { Download, FileText } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
+import { useCurrentNovel } from "../../shared/currentNovel";
 import { getScreenplayDraft } from "../../shared/screenplayDraft";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 export function ScreenplayOverviewPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
+  const currentNovel = useCurrentNovel();
   const [statusMessage, setStatusMessage] = useState("剧本总览会读取本地已保存的场景剧本。");
-  const draft = useMemo(() => getScreenplayDraft(), []);
+  const [draft, setDraft] = useState(() => getScreenplayDraft(currentNovel?.documentId));
   const completedScenes = draft?.scenes.filter((scene) => scene.content.trim().length > 0).length ?? 0;
+
+  useEffect(() => {
+    setDraft(getScreenplayDraft(currentNovel?.documentId));
+  }, [currentNovel?.documentId]);
 
   async function handleExport() {
     if (!draft) {
