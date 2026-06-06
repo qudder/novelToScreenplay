@@ -15,6 +15,7 @@ import type {
   SourceRef,
   SourceRefDto
 } from "./types";
+import type { ScreenplayDraft } from "./screenplayDraft";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -407,5 +408,22 @@ export const studioApi = {
     }
 
     return (await response.json()) as { configured: boolean };
+  },
+
+  async exportScreenplay(draft: ScreenplayDraft): Promise<string> {
+    const response = await fetch(`${API_BASE_URL}/api/screenplays/export`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(draft)
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "剧本导出失败。");
+    }
+
+    return response.text();
   }
 };

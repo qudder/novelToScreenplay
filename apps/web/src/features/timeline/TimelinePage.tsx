@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { PageHeader } from "../../shared/PageHeader";
 import { chapters as mockChapters, characters as mockCharacters, events as mockEvents } from "../../shared/mockData";
 import { useCurrentNovel } from "../../shared/currentNovel";
 import { SourceTrace } from "../../shared/SourceTrace";
+import { buildChapterSourceRef, SourceCompareModal, type ComparePayload } from "../../shared/SourceCompareModal";
 import type { Chapter, Character, Event } from "../../shared/types";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
@@ -23,13 +25,33 @@ export function TimelinePage() {
   const visibleCharacters = currentNovel ? currentNovel.characters : mockCharacters;
   const visibleEvents = currentNovel ? currentNovel.events : mockEvents;
   const hasAnalysis = Boolean(currentNovel?.analysisStatus === "completed");
+  const sourceText = currentNovel?.sourceText ?? "";
+  const [comparePayload, setComparePayload] = useState<ComparePayload | null>(null);
+
+  function openChapterCompare(chapter: Chapter) {
+    setComparePayload({
+      type: "chapter",
+      title: chapter.title,
+      chapter,
+      refs: [buildChapterSourceRef(chapter, visibleChapters, sourceText)]
+    });
+  }
+
+  function openEventCompare(event: Event) {
+    setComparePayload({
+      type: "event",
+      title: event.title,
+      event,
+      refs: event.sourceRefs ?? []
+    });
+  }
 
   return (
     <section ref={ref} className="page">
       <PageHeader
         eyebrow="Narrative Timeline"
         title="章节/事件时间线"
-        description="按章节展示事件、人物出场、地点、时间、冲突点和原文定位。"
+        description="按章节展示事件、人物出场、地点、时间、冲突点和原文定位。点击章节或事件卡片可打开原文比对。"
       />
       <div className="timeline">
         {currentNovel ? (
@@ -45,13 +67,15 @@ export function TimelinePage() {
             <article key={chapter.id} className="timeline-item animate-in">
               <div className="timeline-marker" />
               <div className="panel">
-                <h2>{chapter.title}</h2>
-                <p>{chapter.summary}</p>
-                <small>{names ? `出场人物：${names}` : "出场人物：等待分析结果"}</small>
+                <button className="chapter-preview-button" type="button" onClick={() => openChapterCompare(chapter)}>
+                  <h2>{chapter.title}</h2>
+                  <p>{chapter.summary}</p>
+                  <small>{names ? `出场人物：${names}` : "出场人物：等待分析结果"}</small>
+                </button>
                 <div className="event-stack">
                   {chapterEvents.length > 0 ? (
                     chapterEvents.map((event) => (
-                      <div className="compact-card" key={event.id}>
+                      <button className="compact-card clickable-card" type="button" key={event.id} onClick={() => openEventCompare(event)}>
                         <strong>{event.title}</strong>
                         <p>{event.summary}</p>
                         <small>
@@ -61,7 +85,7 @@ export function TimelinePage() {
                         </small>
                         <SourceTrace refs={event.sourceRefs} />
                         {event.consequence ? <p className="muted-line">结果：{event.consequence}</p> : null}
-                      </div>
+                      </button>
                     ))
                   ) : (
                     <div className="compact-card">
@@ -76,6 +100,12 @@ export function TimelinePage() {
           );
         })}
       </div>
+      <SourceCompareModal
+        payload={comparePayload}
+        sourceText={sourceText}
+        chapters={visibleChapters}
+        onClose={() => setComparePayload(null)}
+      />
     </section>
   );
 }

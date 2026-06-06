@@ -6,6 +6,7 @@ import { studioApi } from "../../shared/api";
 import { getCurrentNovel, saveCurrentNovel, useCurrentNovel } from "../../shared/currentNovel";
 import type { Chapter, CurrentNovel } from "../../shared/types";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
+import { buildChapterSourceRef, SourceCompareModal, type ComparePayload } from "../../shared/SourceCompareModal";
 
 const emptyAnalysis = {
   characters: [],
@@ -54,6 +55,17 @@ export function ImportPage() {
   const [isKeyConfigured, setIsKeyConfigured] = useState(false);
   const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 DeepSeek 配置...");
   const [isSavingKey, setIsSavingKey] = useState(false);
+  const [comparePayload, setComparePayload] = useState<ComparePayload | null>(null);
+
+  function openChapterCompare(chapter: Chapter) {
+    const sourceText = latestImportRef.current?.sourceText ?? importedNovel?.sourceText ?? "";
+    setComparePayload({
+      type: "chapter",
+      title: chapter.title,
+      chapter,
+      refs: [buildChapterSourceRef(chapter, chapters, sourceText)]
+    });
+  }
 
   useEffect(() => {
     if (!importedNovel) return;
@@ -317,13 +329,13 @@ export function ImportPage() {
           <div className="chapter-list">
             {chapters.length > 0 ? (
               chapters.map((chapter) => (
-                <article key={chapter.id} className="compact-card">
+                <button key={chapter.id} className="compact-card clickable-card" type="button" onClick={() => openChapterCompare(chapter)}>
                   <strong>{chapter.title}</strong>
                   <p>{chapter.summary}</p>
                   <small>
                     {chapter.wordCount} 字 · {chapter.conflict}
                   </small>
-                </article>
+                </button>
               ))
             ) : (
               <article className="compact-card">
@@ -334,6 +346,12 @@ export function ImportPage() {
           </div>
         </div>
       </div>
+      <SourceCompareModal
+        payload={comparePayload}
+        sourceText={latestImportRef.current?.sourceText ?? importedNovel?.sourceText ?? ""}
+        chapters={chapters}
+        onClose={() => setComparePayload(null)}
+      />
     </section>
   );
 }
