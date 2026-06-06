@@ -61,6 +61,21 @@ apps/api/app/.debug/deepseek/
 apps/api/app/core/deepseek_config.py
 ```
 
+后端统一日志可通过本地 `apps/api/.env` 配置：
+
+```text
+APP_LOGGING_ENABLED=true
+APP_LOG_LEVEL=INFO
+```
+
+关闭日志：
+
+```text
+APP_LOGGING_ENABLED=false
+```
+
+日志模块位于 `apps/api/app/core/logging_config.py`，业务代码统一通过 `get_logger(...)` 获取 logger。
+
 ## 文档
 
 规划说明见 [docs/architecture-plan.md](docs/architecture-plan.md)。

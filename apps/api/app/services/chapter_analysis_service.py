@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.deepseek_config import deepseek_config
+from app.core.logging_config import get_logger
 from app.domain.models import (
     Action,
     CausalLink,
@@ -22,6 +23,8 @@ from app.domain.models import (
     TimeMarker,
 )
 from app.services.deepseek_client import deepseek_client
+
+logger = get_logger("services.chapter_analysis")
 
 
 class AggregatedAnalysis:
@@ -70,6 +73,7 @@ class AggregatedAnalysis:
 async def analyze_chapters(chapters: list[Chapter], source_text: str) -> AggregatedAnalysis:
     deepseek_config.cache_dir.mkdir(parents=True, exist_ok=True)
     semaphore = asyncio.Semaphore(deepseek_config.max_concurrent_chapter_requests)
+    logger.info("开始分发章节叙事分析：章节数=%s，最大并发=%s", len(chapters), deepseek_config.max_concurrent_chapter_requests)
     analyses = await asyncio.gather(
         *[_analyze_single_chapter(chapter, source_text, semaphore) for chapter in chapters]
     )
@@ -89,6 +93,7 @@ async def _analyze_single_chapter(
     cache_path = _chapter_cache_path(chapter, chapter_text)
 
     if cache_path.exists():
+        logger.info("章节叙事分析命中缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
         payload = json.loads(cache_path.read_text(encoding="utf-8"))
         return _parse_analysis(chapter.id, payload)
 
@@ -96,6 +101,7 @@ async def _analyze_single_chapter(
         user_prompt = _build_user_prompt(chapter, chapter_text)
         debug_dir = _chapter_debug_dir(chapter, chapter_text)
         debug_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("请求章节叙事分析：章节ID=%s，标题=%s，正文字符数=%s，调试目录=%s", chapter.id, chapter.title, len(chapter_text), debug_dir)
         (debug_dir / "user_prompt.md").write_text(user_prompt, encoding="utf-8")
         (debug_dir / "chapter_text.txt").write_text(chapter_text, encoding="utf-8")
         payload = await deepseek_client.extract_json(
@@ -104,6 +110,7 @@ async def _analyze_single_chapter(
         )
         (debug_dir / "model_output.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("章节叙事分析已写入缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
         return _parse_analysis(chapter.id, payload)
 
 

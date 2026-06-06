@@ -1,6 +1,10 @@
 import os
 from pathlib import Path
 
+from app.core.logging_config import get_logger
+
+logger = get_logger("services.settings")
+
 
 class SettingsService:
     def __init__(self) -> None:
@@ -17,6 +21,7 @@ class SettingsService:
         values["DEEPSEEK_API_KEY"] = cleaned_key
         self._write_env_values(values)
         os.environ["DEEPSEEK_API_KEY"] = cleaned_key
+        logger.info("DeepSeek API Key 已更新：环境文件=%s，配置状态=%s", self.env_path, bool(cleaned_key))
 
     def _read_env_values(self) -> dict[str, str]:
         if not self.env_path.exists():
@@ -37,4 +42,3 @@ class SettingsService:
 
 
 settings_service = SettingsService()
-

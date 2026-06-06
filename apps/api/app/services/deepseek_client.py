@@ -6,6 +6,9 @@ from typing import Any
 import httpx
 
 from app.core.deepseek_config import deepseek_config
+from app.core.logging_config import get_logger
+
+logger = get_logger("services.deepseek")
 
 
 class DeepSeekConfigurationError(RuntimeError):
@@ -22,6 +25,7 @@ class DeepSeekClient:
 
         system_prompt = deepseek_config.prompt_path.read_text(encoding="utf-8")
         debug_dir = _prepare_debug_dir(debug_context)
+        logger.info("准备 DeepSeek 请求：模型=%s，调试上下文=%s，调试目录=%s", deepseek_config.model, debug_context, debug_dir)
         payload = {
             "model": deepseek_config.model,
             "messages": [
@@ -51,6 +55,7 @@ class DeepSeekClient:
                 response.raise_for_status()
         except Exception as error:
             _write_debug_text(debug_dir, "error.txt", repr(error))
+            logger.exception("DeepSeek 请求失败：调试上下文=%s，错误=%s", debug_context, error)
             raise
 
         data = response.json()
@@ -60,6 +65,7 @@ class DeepSeekClient:
 
         parsed = json.loads(content)
         _write_debug_json(debug_dir, "parsed_response.json", parsed)
+        logger.info("DeepSeek 响应解析完成：调试上下文=%s，字段=%s", debug_context, list(parsed.keys()))
         return parsed
 
 
