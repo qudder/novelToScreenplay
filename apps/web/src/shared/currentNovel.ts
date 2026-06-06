@@ -8,7 +8,7 @@ export function getCurrentNovel(): CurrentNovel | null {
   if (!raw) return null;
 
   try {
-    return JSON.parse(raw) as CurrentNovel;
+    return normalizeCurrentNovel(JSON.parse(raw) as CurrentNovel);
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
     return null;
@@ -38,4 +38,17 @@ export function useCurrentNovel() {
   }, [refresh]);
 
   return novel;
+}
+
+function normalizeCurrentNovel(novel: CurrentNovel): CurrentNovel {
+  return {
+    ...novel,
+    environments: novel.environments ?? [],
+    shotPlans: novel.shotPlans ?? [],
+    narrativeBlocks: novel.narrativeBlocks ?? [],
+    subScenes: (novel.subScenes ?? []).map((subScene) => ({
+      ...subScene,
+      shotIds: subScene.shotIds ?? []
+    }))
+  };
 }

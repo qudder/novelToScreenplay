@@ -1,4 +1,4 @@
-import type { CurrentNovel, DialogueDto, EnvironmentInfo, Scene, SourceRef, SubScene } from "./types";
+import type { CurrentNovel, DialogueDto, EnvironmentInfo, Scene, ShotPlan, SourceRef, SubScene } from "./types";
 
 const STORAGE_KEY = "novel-to-screenplay.screenplayDraft";
 
@@ -14,6 +14,7 @@ export type SceneScreenplayDraft = {
   eventTitles: string[];
   characters: string[];
   environments: EnvironmentInfo[];
+  shotPlans: ShotPlan[];
   dialogues: DialogueDto[];
   sourceRefs: SourceRef[];
   content: string;
@@ -40,6 +41,7 @@ export function buildDraftFromNovel(novel: CurrentNovel): ScreenplayDraft {
     const relatedEvents = novel.events.filter((event) => eventIdSet.has(event.id) || eventTitleSet.has(event.title));
     const relatedDialogues = collectSceneDialogues(novel.dialogues, relatedEvents, eventTitleSet);
     const relatedEnvironments = collectSceneEnvironments(novel.environments, scene, eventTitleSet);
+    const relatedShotPlans = collectSceneShotPlans(novel.shotPlans ?? [], scene, eventTitleSet);
 
     return {
       sceneId: scene.id,
@@ -53,9 +55,10 @@ export function buildDraftFromNovel(novel: CurrentNovel): ScreenplayDraft {
       eventTitles: scene.eventTitles,
       characters: scene.characters ?? [],
       environments: relatedEnvironments,
+      shotPlans: relatedShotPlans,
       dialogues: relatedDialogues,
       sourceRefs: scene.sourceRefs ?? [],
-      content: existingScene?.content || createInitialSceneContent(scene, relatedEnvironments, relatedDialogues),
+      content: existingScene?.content || createInitialSceneContent(scene, relatedEnvironments, relatedShotPlans, relatedDialogues),
       updatedAt: existingScene?.updatedAt || new Date().toISOString(),
       aiCompleted: existingScene?.aiCompleted ?? false
     };
@@ -75,7 +78,7 @@ export function getScreenplayDraft(): ScreenplayDraft | null {
   if (!raw) return null;
 
   try {
-    return JSON.parse(raw) as ScreenplayDraft;
+    return normalizeScreenplayDraft(JSON.parse(raw) as ScreenplayDraft);
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
     return null;
@@ -108,6 +111,7 @@ export function createAiCompletion(scene: SceneScreenplayDraft) {
   const heading = `内景 ${scene.location} - ${normalizeTimeOfDay(scene.timeOfDay)}`;
   const characters = scene.characters.length ? scene.characters.join("、") : "相关人物";
   const environmentLine = formatEnvironmentLine(scene.environments);
+  const shotLine = formatShotPlanLine(scene.shotPlans);
   const dialogueLines = scene.dialogues.length
     ? scene.dialogues
         .slice(0, 4)
@@ -119,6 +123,8 @@ export function createAiCompletion(scene: SceneScreenplayDraft) {
 
 ${environmentLine}
 
+${shotLine}
+
 ${scene.location}中，${characters}进入同一场冲突。本场功能是${scene.dramaticFunction}。
 
 ${dialogueLines}
@@ -126,9 +132,10 @@ ${dialogueLines}
 场面短暂停住，新的选择摆在众人面前。`;
 }
 
-function createInitialSceneContent(scene: SceneMaterial, environments: EnvironmentInfo[], dialogues: DialogueDto[]) {
+function createInitialSceneContent(scene: SceneMaterial, environments: EnvironmentInfo[], shotPlans: ShotPlan[], dialogues: DialogueDto[]) {
   const heading = `内景 ${scene.location || "地点待定"} - ${normalizeTimeOfDay(scene.timeOfDay)}`;
   const environmentNote = environments.length ? `\n\n环境参考：${formatEnvironmentLine(environments)}` : "";
+  const shotNote = shotPlans.length ? `\n\n分镜参考：${formatShotPlanLine(shotPlans)}` : "";
   const dialogueNote = dialogues.length
     ? `\n\n对话参考：${dialogues
         .slice(0, 3)
@@ -138,7 +145,7 @@ function createInitialSceneContent(scene: SceneMaterial, environments: Environme
   const adaptationNote = scene.adaptationNote ? `\n\n改编提示：${scene.adaptationNote}` : "";
   return `${heading}
 
-请在这里围绕环境、人物行动和关键对话编写本场剧本。${environmentNote}${dialogueNote}${adaptationNote}`;
+请在这里围绕环境、分镜、人物行动和关键对话编写本场剧本。${environmentNote}${shotNote}${dialogueNote}${adaptationNote}`;
 }
 
 type SceneMaterial = {
@@ -152,6 +159,7 @@ type SceneMaterial = {
   eventIds: string[];
   eventTitles: string[];
   environmentIds: string[];
+  shotIds: string[];
   characters: string[];
   sourceRefs: SourceRef[];
   adaptationNote?: string;
@@ -175,6 +183,7 @@ function buildSceneMaterials(novel: CurrentNovel): SceneMaterial[] {
         eventIds: subScene.eventIds,
         eventTitles: subScene.eventTitles,
         environmentIds: subScene.environmentIds,
+        shotIds: subScene.shotIds,
         characters: subScene.characters,
         sourceRefs: subScene.sourceRefs ?? []
       };
@@ -192,6 +201,7 @@ function buildSceneMaterials(novel: CurrentNovel): SceneMaterial[] {
     eventIds: scene.eventIds,
     eventTitles: scene.eventTitles ?? [],
     environmentIds: [],
+    shotIds: [],
     characters: scene.characters ?? [],
     sourceRefs: scene.sourceRefs ?? [],
     adaptationNote: scene.adaptationNote
@@ -217,6 +227,17 @@ function collectSceneEnvironments(environments: EnvironmentInfo[], scene: SceneM
   });
 }
 
+function collectSceneShotPlans(shotPlans: ShotPlan[], scene: SceneMaterial, eventTitleSet: Set<string>) {
+  const shotIdSet = new Set(scene.shotIds);
+  return shotPlans
+    .filter((shotPlan) => {
+      if (shotIdSet.has(shotPlan.id)) return true;
+      if (shotPlan.sceneTitle && shotPlan.sceneTitle === scene.title) return true;
+      return Boolean(shotPlan.eventTitle && eventTitleSet.has(shotPlan.eventTitle));
+    })
+    .sort((left, right) => left.sequenceOrder - right.sequenceOrder);
+}
+
 function formatEnvironmentLine(environments: EnvironmentInfo[]) {
   if (!environments.length) return "环境尚未明确，先用人物动作和场面调度建立空间。";
   const environment = environments[0];
@@ -231,6 +252,25 @@ function formatEnvironmentLine(environments: EnvironmentInfo[]) {
   return details.join("；") || "环境尚未明确，先用人物动作和场面调度建立空间。";
 }
 
+function formatShotPlanLine(shotPlans: ShotPlan[]) {
+  if (!shotPlans.length) return "分镜尚未明确，生成时需根据动作和情绪变化安排视角转换。";
+  return shotPlans
+    .slice(0, 5)
+    .map((shot) =>
+      [
+        shot.sequenceOrder ? `镜头${shot.sequenceOrder}` : "镜头",
+        shot.shotType,
+        shot.viewpoint,
+        shot.composition,
+        shot.cameraMovement,
+        shot.visualFocus ? `焦点：${shot.visualFocus}` : ""
+      ]
+        .filter(Boolean)
+        .join("｜")
+    )
+    .join("\n");
+}
+
 function normalizeTimeOfDay(timeOfDay: string) {
   const value = timeOfDay.toUpperCase();
   if (value.includes("NIGHT") || timeOfDay.includes("夜")) return "夜";
@@ -238,4 +278,14 @@ function normalizeTimeOfDay(timeOfDay: string) {
   if (value.includes("DUSK") || timeOfDay.includes("昏")) return "昏";
   if (value.includes("DAY") || timeOfDay.includes("昼") || timeOfDay.includes("日")) return "日";
   return timeOfDay || "时间待定";
+}
+
+function normalizeScreenplayDraft(draft: ScreenplayDraft): ScreenplayDraft {
+  return {
+    ...draft,
+    scenes: (draft.scenes ?? []).map((scene) => ({
+      ...scene,
+      shotPlans: scene.shotPlans ?? []
+    }))
+  };
 }

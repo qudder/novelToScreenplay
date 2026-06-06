@@ -39,6 +39,7 @@ export type ImportDocumentResult = {
   characters: CharacterDto[];
   locations: LocationDto[];
   environments: EnvironmentInfoDto[];
+  shot_plans: ShotPlanDto[];
   time_markers: TimeMarkerDto[];
   events: EventDto[];
   relationships: RelationshipDto[];
@@ -64,6 +65,7 @@ export type CurrentNovel = {
   characters: Character[];
   locations: LocationDto[];
   environments: EnvironmentInfo[];
+  shotPlans: ShotPlan[];
   timeMarkers: TimeMarkerDto[];
   events: Event[];
   relationships: Relationship[];
@@ -86,6 +88,7 @@ export type AnalysisResultDto = {
   characters: CharacterDto[];
   locations: LocationDto[];
   environments: EnvironmentInfoDto[];
+  shot_plans: ShotPlanDto[];
   time_markers: TimeMarkerDto[];
   events: EventDto[];
   relationships: RelationshipDto[];
@@ -204,6 +207,7 @@ export type SubScene = {
   eventIds: string[];
   dialogueIds: string[];
   environmentIds: string[];
+  shotIds: string[];
   actionIds: string[];
   conflictIds: string[];
   characters: string[];
@@ -224,6 +228,7 @@ export type SubSceneDto = {
   event_ids: string[];
   dialogue_ids: string[];
   environment_ids: string[];
+  shot_ids: string[];
   action_ids: string[];
   conflict_ids: string[];
   characters: string[];
@@ -269,6 +274,38 @@ export type EnvironmentInfoDto = {
   atmosphere: string;
   props: string[];
   visual_details: string[];
+  source_refs?: SourceRefDto[];
+};
+
+export type ShotPlan = {
+  id: string;
+  chapterId: string;
+  sceneTitle: string;
+  eventTitle: string;
+  sequenceOrder: number;
+  shotType: string;
+  viewpoint: string;
+  composition: string;
+  cameraMovement: string;
+  visualFocus: string;
+  emotionalPurpose: string;
+  transition: string;
+  sourceRefs?: SourceRef[];
+};
+
+export type ShotPlanDto = {
+  id: string;
+  chapter_id: string;
+  scene_title: string;
+  event_title: string;
+  sequence_order: number;
+  shot_type: string;
+  viewpoint: string;
+  composition: string;
+  camera_movement: string;
+  visual_focus: string;
+  emotional_purpose: string;
+  transition: string;
   source_refs?: SourceRefDto[];
 };
 

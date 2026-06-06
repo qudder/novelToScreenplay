@@ -180,6 +180,27 @@ export function ScreenplayPage() {
                     </p>
                   </div>
                   <div>
+                    <strong>分镜参考</strong>
+                    <p className="dialogue-reference-list">
+                      {selectedScene.shotPlans.length
+                        ? selectedScene.shotPlans
+                            .slice(0, 4)
+                            .map((shot) =>
+                              [
+                                shot.sequenceOrder ? `镜头${shot.sequenceOrder}` : "镜头",
+                                shot.shotType,
+                                shot.viewpoint,
+                                shot.composition,
+                                shot.cameraMovement
+                              ]
+                                .filter(Boolean)
+                                .join("｜")
+                            )
+                            .join("\n")
+                        : "暂无分镜参考"}
+                    </p>
+                  </div>
+                  <div>
                     <strong>对话参考</strong>
                     <p className="dialogue-reference-list">
                       {selectedScene.dialogues.length

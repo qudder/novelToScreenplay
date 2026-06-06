@@ -16,6 +16,8 @@ import type {
   RelationshipDto,
   Scene,
   SceneDto,
+  ShotPlan,
+  ShotPlanDto,
   SourceRef,
   SourceRefDto,
   SubScene,
@@ -103,6 +105,24 @@ function mapEnvironment(dto: EnvironmentInfoDto): EnvironmentInfo {
   };
 }
 
+function mapShotPlan(dto: ShotPlanDto): ShotPlan {
+  return {
+    id: dto.id,
+    chapterId: dto.chapter_id,
+    sceneTitle: dto.scene_title,
+    eventTitle: dto.event_title,
+    sequenceOrder: dto.sequence_order,
+    shotType: dto.shot_type,
+    viewpoint: dto.viewpoint,
+    composition: dto.composition,
+    cameraMovement: dto.camera_movement,
+    visualFocus: dto.visual_focus,
+    emotionalPurpose: dto.emotional_purpose,
+    transition: dto.transition,
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
+  };
+}
+
 function mapRelationship(dto: RelationshipDto): Relationship {
   return {
     id: dto.id,
@@ -161,6 +181,7 @@ function mapSubScene(dto: SubSceneDto): SubScene {
     eventIds: dto.event_ids,
     dialogueIds: dto.dialogue_ids,
     environmentIds: dto.environment_ids,
+    shotIds: dto.shot_ids ?? [],
     actionIds: dto.action_ids,
     conflictIds: dto.conflict_ids,
     characters: dto.characters,
@@ -240,6 +261,24 @@ function toEnvironmentDto(environment: EnvironmentInfo): EnvironmentInfoDto {
   };
 }
 
+function toShotPlanDto(shotPlan: ShotPlan): ShotPlanDto {
+  return {
+    id: shotPlan.id,
+    chapter_id: shotPlan.chapterId,
+    scene_title: shotPlan.sceneTitle,
+    event_title: shotPlan.eventTitle,
+    sequence_order: shotPlan.sequenceOrder,
+    shot_type: shotPlan.shotType,
+    viewpoint: shotPlan.viewpoint,
+    composition: shotPlan.composition,
+    camera_movement: shotPlan.cameraMovement,
+    visual_focus: shotPlan.visualFocus,
+    emotional_purpose: shotPlan.emotionalPurpose,
+    transition: shotPlan.transition,
+    source_refs: (shotPlan.sourceRefs ?? []).map(toSourceRefDto)
+  };
+}
+
 function toSceneDto(scene: Scene): SceneDto {
   return {
     id: scene.id,
@@ -287,6 +326,7 @@ function toSubSceneDto(subScene: SubScene): SubSceneDto {
     event_ids: subScene.eventIds,
     dialogue_ids: subScene.dialogueIds,
     environment_ids: subScene.environmentIds,
+    shot_ids: subScene.shotIds ?? [],
     action_ids: subScene.actionIds,
     conflict_ids: subScene.conflictIds,
     characters: subScene.characters,
@@ -305,6 +345,7 @@ function mapImportResult(result: ImportDocumentResult) {
     characters: result.characters.map(mapCharacter),
     locations: result.locations,
     environments: (result.environments ?? []).map(mapEnvironment),
+    shotPlans: (result.shot_plans ?? []).map(mapShotPlan),
     timeMarkers: result.time_markers,
     events: result.events.map(mapEvent),
     relationships: result.relationships.map(mapRelationship),
@@ -328,6 +369,7 @@ function mapAnalysisResult(result: AnalysisResultDto) {
     characters: result.characters.map(mapCharacter),
     locations: result.locations,
     environments: (result.environments ?? []).map(mapEnvironment),
+    shotPlans: (result.shot_plans ?? []).map(mapShotPlan),
     timeMarkers: result.time_markers,
     events: result.events.map(mapEvent),
     relationships: result.relationships.map(mapRelationship),
@@ -363,6 +405,7 @@ export const studioApi = {
     characters: Character[];
     locations: ImportDocumentResult["locations"];
     environments: EnvironmentInfo[];
+    shotPlans: ShotPlan[];
     timeMarkers: ImportDocumentResult["time_markers"];
     events: Event[];
     relationships: Relationship[];
@@ -413,6 +456,7 @@ export const studioApi = {
     characters: Character[];
     locations: ImportDocumentResult["locations"];
     environments: EnvironmentInfo[];
+    shotPlans: ShotPlan[];
     timeMarkers: ImportDocumentResult["time_markers"];
     events: Event[];
     relationships: Relationship[];
@@ -439,6 +483,7 @@ export const studioApi = {
       characters: snapshot.characters.map(toCharacterDto),
       locations: snapshot.locations,
       environments: snapshot.environments.map(toEnvironmentDto),
+      shot_plans: (snapshot.shotPlans ?? []).map(toShotPlanDto),
       time_markers: snapshot.timeMarkers,
       events: snapshot.events.map(toEventDto),
       relationships: snapshot.relationships.map(toRelationshipDto),
@@ -594,6 +639,7 @@ export const studioApi = {
         event_titles: payload.scene.eventTitles,
         characters: payload.scene.characters,
         environments: payload.scene.environments,
+        shot_plans: payload.scene.shotPlans,
         dialogues: payload.scene.dialogues,
         events: relatedEvents,
         source_refs: payload.scene.sourceRefs.map(toSourceRefDto),

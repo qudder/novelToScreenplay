@@ -23,6 +23,7 @@ class ScreenplayCompletionRequest(BaseModel):
     event_titles: list[str] = []
     characters: list[str] = []
     environments: list[dict[str, Any]] = []
+    shot_plans: list[dict[str, Any]] = []
     dialogues: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
     source_refs: list[SourceRef] = []
@@ -72,6 +73,7 @@ def _build_user_prompt(payload: ScreenplayCompletionRequest, source_excerpt: str
         },
         "事件信息": payload.events,
         "环境信息": payload.environments,
+        "分镜信息": payload.shot_plans,
         "关键对话": payload.dialogues,
         "已有编辑内容": payload.current_content,
         "原文片段": source_excerpt,

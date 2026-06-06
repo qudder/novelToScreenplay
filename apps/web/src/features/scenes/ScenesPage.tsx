@@ -121,6 +121,7 @@ export function ScenesPage() {
                       {subScene.location || "地点待定"} · {subScene.timeText || subScene.timeOfDay || "时间待定"}
                     </p>
                     <small>{subScene.dramaticFunction || "戏剧功能待确认"}</small>
+                    {subScene.shotIds.length ? <p className="muted-line">分镜：{subScene.shotIds.length} 个镜头规划</p> : null}
                     <SourceTrace refs={subScene.sourceRefs} />
                     <div className="tag-row">
                       {(subScene.eventTitles.length ? subScene.eventTitles : subScene.eventIds).map((eventId) => (
