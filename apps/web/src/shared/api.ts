@@ -11,10 +11,30 @@ import type {
   Relationship,
   RelationshipDto,
   Scene,
-  SceneDto
+  SceneDto,
+  SourceRef,
+  SourceRefDto
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+
+function mapSourceRef(dto: SourceRefDto): SourceRef {
+  return {
+    chapterId: dto.chapter_id,
+    startChar: dto.start_char,
+    endChar: dto.end_char,
+    evidence: dto.evidence
+  };
+}
+
+function toSourceRefDto(ref: SourceRef): SourceRefDto {
+  return {
+    chapter_id: ref.chapterId,
+    start_char: ref.startChar,
+    end_char: ref.endChar,
+    evidence: ref.evidence
+  };
+}
 
 function mapChapter(dto: ChapterDto): Chapter {
   return {
@@ -35,7 +55,8 @@ function mapCharacter(dto: CharacterDto): Character {
     importance: dto.importance,
     role: dto.role,
     description: dto.description,
-    appearances: dto.appearances
+    appearances: dto.appearances,
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
   };
 }
 
@@ -50,7 +71,8 @@ function mapEvent(dto: EventDto): Event {
     characters: dto.characters,
     location: dto.location,
     timeText: dto.time_text,
-    consequence: dto.consequence
+    consequence: dto.consequence,
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
   };
 }
 
@@ -76,7 +98,8 @@ function mapScene(dto: SceneDto): Scene {
     dramaticFunction: dto.dramatic_function,
     eventTitles: dto.event_titles,
     characters: dto.characters,
-    adaptationNote: dto.adaptation_note
+    adaptationNote: dto.adaptation_note,
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
   };
 }
 
@@ -91,6 +114,19 @@ function toChapterDto(chapter: Chapter): ChapterDto {
   };
 }
 
+function toCharacterDto(character: Character): CharacterDto {
+  return {
+    id: character.id,
+    name: character.name,
+    aliases: character.aliases,
+    importance: character.importance,
+    role: character.role,
+    description: character.description,
+    appearances: character.appearances,
+    source_refs: (character.sourceRefs ?? []).map(toSourceRefDto)
+  };
+}
+
 function toEventDto(event: Event): EventDto {
   return {
     id: event.id,
@@ -102,7 +138,8 @@ function toEventDto(event: Event): EventDto {
     characters: event.characters ?? [],
     location: event.location ?? "",
     time_text: event.timeText ?? "",
-    consequence: event.consequence ?? ""
+    consequence: event.consequence ?? "",
+    source_refs: (event.sourceRefs ?? []).map(toSourceRefDto)
   };
 }
 
@@ -128,7 +165,8 @@ function toSceneDto(scene: Scene): SceneDto {
     dramatic_function: scene.dramaticFunction,
     event_titles: scene.eventTitles ?? [],
     characters: scene.characters ?? [],
-    adaptation_note: scene.adaptationNote ?? ""
+    adaptation_note: scene.adaptationNote ?? "",
+    source_refs: (scene.sourceRefs ?? []).map(toSourceRefDto)
   };
 }
 
@@ -149,7 +187,8 @@ function mapImportResult(result: ImportDocumentResult) {
     actions: result.actions,
     motivations: result.motivations,
     causalLinks: result.causal_links,
-    scenes: result.scenes.map(mapScene)
+    scenes: result.scenes.map(mapScene),
+    emptyChapterIds: result.empty_chapter_ids ?? []
   };
 }
 
@@ -168,7 +207,8 @@ function mapAnalysisResult(result: AnalysisResultDto) {
     actions: result.actions,
     motivations: result.motivations,
     causalLinks: result.causal_links,
-    scenes: result.scenes.map(mapScene)
+    scenes: result.scenes.map(mapScene),
+    emptyChapterIds: result.empty_chapter_ids ?? []
   };
 }
 
@@ -259,7 +299,7 @@ export const studioApi = {
       message: snapshot.message,
       source_text: snapshot.sourceText,
       chapters: snapshot.chapters.map(toChapterDto),
-      characters: snapshot.characters,
+      characters: snapshot.characters.map(toCharacterDto),
       locations: snapshot.locations,
       time_markers: snapshot.timeMarkers,
       events: snapshot.events.map(toEventDto),
@@ -300,6 +340,28 @@ export const studioApi = {
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
       throw new Error(payload?.detail ?? "启动叙事分析失败。");
+    }
+
+    const result = await response.json();
+    return {
+      documentId: result.document_id,
+      status: result.status,
+      message: result.message
+    };
+  },
+
+  async retryDocumentAnalysis(documentId: string): Promise<{
+    documentId: string;
+    status: "idle" | "running" | "completed" | "failed";
+    message: string;
+  }> {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/analysis/retry`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "重试叙事分析失败。");
     }
 
     const result = await response.json();

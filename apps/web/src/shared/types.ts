@@ -16,6 +16,20 @@ export type ChapterDto = {
   character_ids: string[];
 };
 
+export type SourceRef = {
+  chapterId: string;
+  startChar: number;
+  endChar: number;
+  evidence: string;
+};
+
+export type SourceRefDto = {
+  chapter_id: string;
+  start_char: number;
+  end_char: number;
+  evidence: string;
+};
+
 export type ImportDocumentResult = {
   document_id: string;
   filename: string;
@@ -33,6 +47,7 @@ export type ImportDocumentResult = {
   motivations: MotivationDto[];
   causal_links: CausalLinkDto[];
   scenes: SceneDto[];
+  empty_chapter_ids?: string[];
   source_text: string;
 };
 
@@ -54,6 +69,7 @@ export type CurrentNovel = {
   motivations: MotivationDto[];
   causalLinks: CausalLinkDto[];
   scenes: Scene[];
+  emptyChapterIds?: string[];
   importedAt: string;
 };
 
@@ -72,6 +88,7 @@ export type AnalysisResultDto = {
   motivations: MotivationDto[];
   causal_links: CausalLinkDto[];
   scenes: SceneDto[];
+  empty_chapter_ids?: string[];
 };
 
 export type Character = {
@@ -82,6 +99,7 @@ export type Character = {
   role: string;
   description: string;
   appearances: string[];
+  sourceRefs?: SourceRef[];
 };
 
 export type CharacterDto = {
@@ -92,6 +110,7 @@ export type CharacterDto = {
   role: string;
   description: string;
   appearances: string[];
+  source_refs?: SourceRefDto[];
 };
 
 export type Relationship = {
@@ -114,6 +133,7 @@ export type Event = {
   location?: string;
   timeText?: string;
   consequence?: string;
+  sourceRefs?: SourceRef[];
 };
 
 export type Scene = {
@@ -127,6 +147,7 @@ export type Scene = {
   eventTitles?: string[];
   characters?: string[];
   adaptationNote?: string;
+  sourceRefs?: SourceRef[];
 };
 
 export type LocationDto = {
@@ -158,6 +179,7 @@ export type EventDto = {
   location: string;
   time_text: string;
   consequence: string;
+  source_refs?: SourceRefDto[];
 };
 
 export type RelationshipDto = {
@@ -180,6 +202,7 @@ export type SceneDto = {
   event_titles: string[];
   characters: string[];
   adaptation_note: string;
+  source_refs?: SourceRefDto[];
 };
 
 export type ConflictDto = {

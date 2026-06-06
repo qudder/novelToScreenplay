@@ -12,6 +12,13 @@ class Chapter(BaseModel):
     character_ids: list[str]
 
 
+class SourceRef(BaseModel):
+    chapter_id: str = ""
+    start_char: int = -1
+    end_char: int = -1
+    evidence: str = ""
+
+
 class Character(BaseModel):
     id: str
     name: str
@@ -20,6 +27,7 @@ class Character(BaseModel):
     role: str
     description: str
     appearances: list[str]
+    source_refs: list[SourceRef] = []
 
 
 class Relationship(BaseModel):
@@ -42,6 +50,7 @@ class Event(BaseModel):
     location: str = ""
     time_text: str = ""
     consequence: str = ""
+    source_refs: list[SourceRef] = []
 
 
 class Scene(BaseModel):
@@ -55,6 +64,7 @@ class Scene(BaseModel):
     event_titles: list[str] = []
     characters: list[str] = []
     adaptation_note: str = ""
+    source_refs: list[SourceRef] = []
 
 
 class Location(BaseModel):
@@ -192,6 +202,7 @@ class AnalysisResult(BaseModel):
     causal_links: list[CausalLink] = []
     scenes: list[Scene] = []
     chapter_analyses: list[ChapterAnalysis] = []
+    empty_chapter_ids: list[str] = []
 
 
 class AnalysisStartResult(BaseModel):

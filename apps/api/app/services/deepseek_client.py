@@ -19,12 +19,16 @@ class DeepSeekResponseParseError(RuntimeError):
     pass
 
 
+class DeepSeekResponseTruncatedError(DeepSeekResponseParseError):
+    pass
+
+
 class DeepSeekClient:
     async def extract_json(self, user_prompt: str, debug_context: str | None = None) -> dict[str, Any]:
         api_key = os.getenv("DEEPSEEK_API_KEY")
         if not api_key:
             raise DeepSeekConfigurationError(
-                "DEEPSEEK_API_KEY is not set. Create apps/api/.env locally or set the environment variable."
+                "未配置 DEEPSEEK_API_KEY。请在本地创建 apps/api/.env，或设置同名环境变量。"
             )
 
         system_prompt = deepseek_config.prompt_path.read_text(encoding="utf-8")
@@ -63,10 +67,15 @@ class DeepSeekClient:
             raise
 
         data = response.json()
-        content = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        finish_reason = choice.get("finish_reason")
+        content = choice["message"]["content"]
         if not content:
             raise RuntimeError("DeepSeek 返回了空内容。")
-
+        if finish_reason == "length":
+            message = f"DeepSeek 响应被截断：已达到 max_tokens={deepseek_config.max_tokens}。"
+            _write_debug_text(debug_dir, "truncated.txt", message)
+            raise DeepSeekResponseTruncatedError(message)
         try:
             parsed = _parse_json_content(content)
         except DeepSeekResponseParseError as error:
@@ -95,7 +104,7 @@ def _parse_json_content(content: str) -> dict[str, Any]:
             raise DeepSeekResponseParseError(str(second_error)) from second_error
 
     if not isinstance(parsed, dict):
-        raise DeepSeekResponseParseError(f"期望 JSON object，实际得到 {type(parsed).__name__}。")
+        raise DeepSeekResponseParseError(f"Expected JSON object, got {type(parsed).__name__}.")
     return parsed
 
 

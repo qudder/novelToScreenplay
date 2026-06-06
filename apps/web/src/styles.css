@@ -324,6 +324,14 @@ button:disabled {
   line-height: 1.6;
 }
 
+.source-trace {
+  display: block;
+  margin-top: 8px;
+  color: #5f6f72;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

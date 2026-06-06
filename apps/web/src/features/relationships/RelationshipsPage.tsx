@@ -16,6 +16,7 @@ type GraphNode = {
 };
 
 type GraphEdge = {
+  id: string;
   source: string;
   target: string;
   data: {
@@ -40,17 +41,37 @@ function buildGraphData(characters: Character[], relationships: Relationship[]) 
     }
   }));
 
-  const edges: GraphEdge[] = relationships
-    .map((relationship) => ({
-      source: resolveRelationshipEndpoint(relationship.source, characters),
-      target: resolveRelationshipEndpoint(relationship.target, characters),
-      data: {
-        label: relationship.type,
-        strength: relationship.strength,
-        evidence: relationship.evidence
-      }
-    }))
-    .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target) && edge.source !== edge.target);
+  const edgeMap = new Map<string, GraphEdge>();
+
+  relationships.forEach((relationship, index) => {
+    const source = resolveRelationshipEndpoint(relationship.source, characters);
+    const target = resolveRelationshipEndpoint(relationship.target, characters);
+    if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) return;
+
+    const key = [source, target].sort().join("--");
+    const existing = edgeMap.get(key);
+    if (!existing) {
+      edgeMap.set(key, {
+        id: relationship.id || `edge-${source}-${target}-${index}`,
+        source,
+        target,
+        data: {
+          label: relationship.type,
+          strength: relationship.strength,
+          evidence: relationship.evidence
+        }
+      });
+      return;
+    }
+
+    const labels = new Set(existing.data.label.split(" / ").filter(Boolean));
+    labels.add(relationship.type);
+    existing.data.label = Array.from(labels).join(" / ");
+    existing.data.strength = Math.max(existing.data.strength, relationship.strength);
+    existing.data.evidence = [existing.data.evidence, relationship.evidence].filter(Boolean).join(" / ");
+  });
+
+  const edges = Array.from(edgeMap.values());
 
   return { nodes, edges };
 }
@@ -162,4 +183,3 @@ export function RelationshipsPage() {
     </section>
   );
 }
-

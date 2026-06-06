@@ -1,6 +1,7 @@
 import { PageHeader } from "../../shared/PageHeader";
 import { chapters as mockChapters, characters as mockCharacters, events as mockEvents } from "../../shared/mockData";
 import { useCurrentNovel } from "../../shared/currentNovel";
+import { SourceTrace } from "../../shared/SourceTrace";
 import type { Chapter, Character, Event } from "../../shared/types";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
@@ -28,7 +29,7 @@ export function TimelinePage() {
       <PageHeader
         eyebrow="Narrative Timeline"
         title="章节/事件时间线"
-        description="按章节展示事件、人物出场、地点、时间和冲突点。"
+        description="按章节展示事件、人物出场、地点、时间、冲突点和原文定位。"
       />
       <div className="timeline">
         {currentNovel ? (
@@ -58,6 +59,7 @@ export function TimelinePage() {
                           {event.timeText ? `${event.timeText} · ` : ""}
                           冲突：{event.conflict || "无明确冲突"}
                         </small>
+                        <SourceTrace refs={event.sourceRefs} />
                         {event.consequence ? <p className="muted-line">结果：{event.consequence}</p> : null}
                       </div>
                     ))
@@ -77,4 +79,3 @@ export function TimelinePage() {
     </section>
   );
 }
-
