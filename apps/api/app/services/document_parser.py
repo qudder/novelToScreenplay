@@ -33,7 +33,7 @@ def split_into_chapters(text: str) -> list[Chapter]:
     if not normalized:
         return []
 
-    matches = list(_chapter_heading_pattern().finditer(normalized))
+    matches = _chapter_heading_matches(normalized)
     if not matches:
         return [_build_chapter("chapter-1", "全文", normalized, 0, len(normalized))]
 
@@ -52,7 +52,7 @@ def split_into_chapters(text: str) -> list[Chapter]:
         source_start = match.start() + leading_trim
         source_end = match.start() + trailing_trim
         lines = block.splitlines()
-        title = lines[0].strip()
+        title = _clean_chapter_title(lines[0].strip())
         body = "\n".join(lines[1:]).strip() or title
         chapters.append(_build_chapter(f"chapter-{len(chapters) + 1}", title, body, source_start, source_end))
 
@@ -74,11 +74,54 @@ def _build_chapter(chapter_id: str, title: str, body: str, source_start: int, so
 
 
 def _chapter_heading_pattern() -> re.Pattern[str]:
-    chinese_number = "零一二三四五六七八九十百千万两〇0-9"
+    chinese_number = "零一二三四五六七八九十百千万两〇○0-9１２３４５６７８９０"
+    chapter_marker = rf"第\s*[{chinese_number}]+\s*[章节卷回幕集部]"
+    volume_prefix = rf"(?:第\s*[{chinese_number}]+\s*[部卷集]\s*)?"
     return re.compile(
-        rf"(?m)^\s*(第[{chinese_number}]+[章节卷回幕集].*|Chapter\s+\d+.*|#{1,3}\s+.+)\s*$",
+        rf"(?m)^\s*("
+        rf"{volume_prefix}{chapter_marker}.*"
+        rf"|[{chinese_number}]+[、.．]\s*.{{0,60}}"
+        rf"|Chapter\s+\d+.*"
+        rf"|#{{1,3}}\s+.+"
+        rf"|序章|楔子|前言|引子|尾声|后记"
+        rf")\s*$",
         re.IGNORECASE,
     )
+
+
+def _chapter_heading_matches(text: str) -> list[re.Match[str]]:
+    candidates = list(_chapter_heading_pattern().finditer(text))
+    if not candidates:
+        return []
+
+    if len(candidates) == 1:
+        line = candidates[0].group(1).strip()
+        if re.match(r"^[0-9０-９]+[、.．]", line):
+            return []
+        return candidates
+
+    filtered = [match for match in candidates if _looks_like_chapter_heading(match.group(1).strip())]
+    numeric_count = sum(1 for match in filtered if re.match(r"^[0-9０-９]+[、.．]", match.group(1).strip()))
+    if numeric_count == 1:
+        filtered = [match for match in filtered if not re.match(r"^[0-9０-９]+[、.．]", match.group(1).strip())]
+    return filtered
+
+
+def _looks_like_chapter_heading(line: str) -> bool:
+    if re.search(r"第\s*[零一二三四五六七八九十百千万两〇○0-9１２３４５６７８９０]+\s*[章节卷回幕集部]", line):
+        return True
+    if re.match(r"^(Chapter\s+\d+|#{1,3}\s+|序章|楔子|前言|引子|尾声|后记)", line, re.IGNORECASE):
+        return True
+    if re.match(r"^[0-9０-９]+[、.．]\s*\S{1,40}$", line):
+        return True
+    return False
+
+
+def _clean_chapter_title(title: str) -> str:
+    markdown_match = re.match(r"^#{1,3}\s+(.+)$", title)
+    if markdown_match:
+        return markdown_match.group(1).strip()
+    return title
 
 
 def _decode_text(content: bytes) -> str:

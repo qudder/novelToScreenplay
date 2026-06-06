@@ -30,6 +30,20 @@ type SourceCompareModalProps = {
 };
 
 export function buildChapterSourceRef(chapter: Chapter, chapters: Chapter[], sourceText: string): SourceRef {
+  if (
+    typeof chapter.sourceStart === "number" &&
+    typeof chapter.sourceEnd === "number" &&
+    chapter.sourceStart >= 0 &&
+    chapter.sourceEnd > chapter.sourceStart
+  ) {
+    return {
+      chapterId: chapter.id,
+      startChar: chapter.sourceStart,
+      endChar: chapter.sourceEnd,
+      evidence: chapter.title
+    };
+  }
+
   const chapterRanges = buildChapterRanges(chapters, sourceText);
   const range = chapterRanges.get(chapter.id);
   const startChar = range?.startChar ?? 0;
