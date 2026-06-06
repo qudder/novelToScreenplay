@@ -2,6 +2,7 @@ import { DndContext } from "@dnd-kit/core";
 import { PageHeader } from "../../shared/PageHeader";
 import { events as mockEvents, scenes as mockScenes } from "../../shared/mockData";
 import { useCurrentNovel } from "../../shared/currentNovel";
+import { SourceTrace } from "../../shared/SourceTrace";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
 export function ScenesPage() {
@@ -16,7 +17,7 @@ export function ScenesPage() {
       <PageHeader
         eyebrow="Scene Board"
         title="场景拆分板"
-        description="把小说事件整理为剧本场景候选，保留来源事件、地点、时间和戏剧功能。"
+        description="把小说事件整理为剧本场景候选，保留来源事件、地点、时间、戏剧功能和原文定位。"
       />
       {currentNovel ? (
         <div className="current-novel-banner animate-in">
@@ -38,6 +39,7 @@ export function ScenesPage() {
                       {event.timeText ? `${event.timeText} · ` : ""}
                       {event.conflict || "无明确冲突"}
                     </small>
+                    <SourceTrace refs={event.sourceRefs} />
                     {event.consequence ? <p className="muted-line">结果：{event.consequence}</p> : null}
                   </div>
                 ))
@@ -60,6 +62,7 @@ export function ScenesPage() {
                       {scene.location || "地点待定"} · {scene.timeOfDay || "时间待定"}
                     </p>
                     <small>{scene.dramaticFunction || "戏剧功能待确认"}</small>
+                    <SourceTrace refs={scene.sourceRefs} />
                     {scene.adaptationNote ? <p className="muted-line">改编：{scene.adaptationNote}</p> : null}
                     <div className="tag-row">
                       {(scene.eventTitles?.length ? scene.eventTitles : scene.eventIds).map((eventId) => (
@@ -81,4 +84,3 @@ export function ScenesPage() {
     </section>
   );
 }
-

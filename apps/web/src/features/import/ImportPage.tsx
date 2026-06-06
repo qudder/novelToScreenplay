@@ -37,8 +37,8 @@ export function ImportPage() {
   );
 
   const [chapters, setChapters] = useState<Chapter[]>(importedNovel?.chapters ?? mockChapters);
-  const [selectedFilename, setSelectedFilename] = useState<string>(importedNovel?.filename ?? "示例文本");
-  const [statusMessage, setStatusMessage] = useState<string>(importedNovel?.message ?? "当前展示示例分章结果。");
+  const [selectedFilename, setSelectedFilename] = useState(importedNovel?.filename ?? "示例文本");
+  const [statusMessage, setStatusMessage] = useState(importedNovel?.message ?? "当前展示示例分章结果。");
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [documentId, setDocumentId] = useState(importedNovel?.documentId ?? "");
@@ -56,9 +56,7 @@ export function ImportPage() {
   const [isSavingKey, setIsSavingKey] = useState(false);
 
   useEffect(() => {
-    if (!importedNovel) {
-      return;
-    }
+    if (!importedNovel) return;
 
     latestImportRef.current = {
       filename: importedNovel.filename,
@@ -169,7 +167,11 @@ export function ImportPage() {
     setStatusMessage("叙事分析已启动，章节结果可继续查看。");
 
     try {
-      await studioApi.startDocumentAnalysis(documentId);
+      if (analysisStatus === "completed" || analysisStatus === "failed") {
+        await studioApi.retryDocumentAnalysis(documentId);
+      } else {
+        await studioApi.startDocumentAnalysis(documentId);
+      }
       await pollAnalysis(documentId);
     } catch (error) {
       setAnalysisStatus("failed");
@@ -206,6 +208,7 @@ export function ImportPage() {
           motivations: result.motivations,
           causalLinks: result.causalLinks,
           scenes: result.scenes,
+          emptyChapterIds: result.emptyChapterIds,
           importedAt: latestImport?.importedAt ?? currentNovel?.importedAt ?? new Date().toISOString()
         };
         setAnalysisCounts({
@@ -227,6 +230,9 @@ export function ImportPage() {
 
     throw new Error("叙事分析仍在运行，请稍后刷新状态。");
   }
+
+  const analysisButtonLabel =
+    analysisStatus === "completed" || analysisStatus === "failed" ? "重新分析" : "开始叙事分析";
 
   return (
     <section ref={ref} className="page">
@@ -256,10 +262,11 @@ export function ImportPage() {
             </div>
             <small className={isKeyConfigured ? "status-ok" : "status-warn"}>{keyStatusMessage}</small>
           </div>
+
           <div className="upload-zone">
             <UploadCloud size={40} />
             <h2>拖拽或选择小说文件</h2>
-            <p>支持 .txt、.md、.docx。上传后会先展示章节，叙事分析可单独启动。</p>
+            <p>支持 .txt、.md、.docx。上传后先展示章节，叙事分析可单独启动或重新执行。</p>
             <input
               ref={fileInputRef}
               className="visually-hidden"
@@ -285,6 +292,9 @@ export function ImportPage() {
                   {analysisCounts.relationships} 关系 · {analysisCounts.scenes} 场景
                 </span>
               ) : null}
+              {importedNovel?.emptyChapterIds?.length ? (
+                <span>仍有 {importedNovel.emptyChapterIds.length} 个章节未补齐，可点击重新分析。</span>
+              ) : null}
               {errorMessage ? <em>{errorMessage}</em> : null}
             </div>
             <button
@@ -294,10 +304,11 @@ export function ImportPage() {
               onClick={handleStartAnalysis}
             >
               <PlayCircle size={16} />
-              {isAnalyzing ? "分析中..." : "开始叙事分析"}
+              {isAnalyzing ? "分析中..." : analysisButtonLabel}
             </button>
           </div>
         </div>
+
         <div className="panel animate-in">
           <div className="section-title">
             <FileText size={18} />

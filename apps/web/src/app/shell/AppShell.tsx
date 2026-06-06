@@ -138,7 +138,8 @@ function mergeAnalysisResult(
     actions: result.actions,
     motivations: result.motivations,
     causalLinks: result.causalLinks,
-    scenes: result.scenes
+    scenes: result.scenes,
+    emptyChapterIds: result.emptyChapterIds
   };
 }
 

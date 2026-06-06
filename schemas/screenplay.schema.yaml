@@ -1,0 +1,115 @@
+schema_version: "1.0.0"
+schema_name: "novel_to_screenplay_screenplay"
+description: "Canonical YAML schema for screenplay drafts generated from novel narrative analysis."
+
+screenplay:
+  id: "string"
+  title: "string"
+  language: "zh-CN"
+  format: "feature_screenplay"
+  draft:
+    version: "integer"
+    status: "outline | draft | revised | locked"
+    created_at: "datetime"
+    updated_at: "datetime"
+  source:
+    document_id: "string"
+    filename: "string"
+    chapter_ids: ["string"]
+  logline: "string"
+  synopsis: "string"
+  themes: ["string"]
+
+  acts:
+    - id: "act-1"
+      title: "string"
+      function: "setup | confrontation | resolution | custom"
+      summary: "string"
+      sequence_order: "integer"
+      scene_ids: ["string"]
+
+  characters:
+    - id: "char-1"
+      name: "string"
+      aliases: ["string"]
+      screenplay_role: "protagonist | antagonist | ally | obstacle | supporting | cameo"
+      want: "string"
+      need: "string"
+      arc: "string"
+      voice_note: "string"
+      source_character_ids: ["string"]
+
+  scenes:
+    - id: "scene-1"
+      act_id: "act-1"
+      sequence_order: "integer"
+      scene_heading:
+        prefix: "INT | EXT | INT/EXT"
+        location: "string"
+        time_of_day: "DAY | NIGHT | DAWN | DUSK | CONTINUOUS | LATER | UNKNOWN"
+        raw: "string"
+      dramatic:
+        purpose: "setup | conflict | reveal | reversal | climax | resolution | transition"
+        conflict: "string"
+        turning_point: "string"
+        emotional_value_start: "string"
+        emotional_value_end: "string"
+        stakes: "string"
+      source:
+        chapter_ids: ["string"]
+        event_ids: ["string"]
+        source_spans:
+          - chapter_id: "string"
+            start_char: "integer"
+            end_char: "integer"
+            evidence: "string"
+      cast:
+        present_character_ids: ["string"]
+        speaking_character_ids: ["string"]
+      beats:
+        - id: "beat-1"
+          type: "action | dialogue | parenthetical | shot | transition | note"
+          sequence_order: "integer"
+          character_id: "string"
+          character_name: "string"
+          parenthetical: "string"
+          text: "string"
+          transition: "CUT TO | DISSOLVE TO | FADE OUT | custom"
+          source_event_ids: ["string"]
+          source_span:
+            chapter_id: "string"
+            start_char: "integer"
+            end_char: "integer"
+          revision_note: "string"
+      adaptation:
+        compression: "none | merged | summarized | omitted"
+        added_for_screen: "boolean"
+        rationale: "string"
+        risks: ["string"]
+
+  continuity:
+    timeline:
+      - scene_id: "string"
+        story_time: "string"
+        order: "integer"
+    locations:
+      - name: "string"
+        scene_ids: ["string"]
+    props:
+      - name: "string"
+        scene_ids: ["string"]
+        note: "string"
+
+  validation:
+    required_scene_fields:
+      - "scene_heading.prefix"
+      - "scene_heading.location"
+      - "scene_heading.time_of_day"
+      - "beats"
+    allowed_beat_types:
+      - "action"
+      - "dialogue"
+      - "parenthetical"
+      - "shot"
+      - "transition"
+      - "note"

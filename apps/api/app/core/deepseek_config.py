@@ -7,7 +7,7 @@ class DeepSeekConfig(BaseModel):
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-chat"
     temperature: float = 0.1
-    max_tokens: int = 4096
+    max_tokens: int = 8192
     timeout_seconds: int = 60
     max_concurrent_chapter_requests: int = 3
     prompt_path: Path = Path(__file__).resolve().parents[1] / "config" / "chapter_analysis_prompt.md"

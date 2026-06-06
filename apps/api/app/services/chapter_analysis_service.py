@@ -20,11 +20,17 @@ from app.domain.models import (
     Motivation,
     Relationship,
     Scene,
+    SourceRef,
     TimeMarker,
 )
 from app.services.deepseek_client import deepseek_client
 
 logger = get_logger("services.chapter_analysis")
+CACHE_SCHEMA_VERSION = "chapter-analysis-v2-screenplay-source-refs"
+
+
+class _RefreshChapterCache(RuntimeError):
+    pass
 
 
 class AggregatedAnalysis:
@@ -61,6 +67,7 @@ class AggregatedAnalysis:
                 if existing:
                     existing.aliases = sorted(set(existing.aliases + character.aliases))
                     existing.appearances = sorted(set(existing.appearances + character.appearances))
+                    existing.source_refs = _merge_source_refs(existing.source_refs + character.source_refs)
                     existing.importance = max(existing.importance, character.importance)
                     if character.description and character.description not in existing.description:
                         existing.description = f"{existing.description}; {character.description}"
@@ -70,12 +77,12 @@ class AggregatedAnalysis:
         return sorted(merged.values(), key=lambda item: item.importance, reverse=True)
 
 
-async def analyze_chapters(chapters: list[Chapter], source_text: str) -> AggregatedAnalysis:
+async def analyze_chapters(chapters: list[Chapter], source_text: str, force_refresh: bool = False) -> AggregatedAnalysis:
     deepseek_config.cache_dir.mkdir(parents=True, exist_ok=True)
     semaphore = asyncio.Semaphore(deepseek_config.max_concurrent_chapter_requests)
     logger.info("开始分发章节叙事分析：章节数=%s，最大并发=%s", len(chapters), deepseek_config.max_concurrent_chapter_requests)
     analyses = await asyncio.gather(
-        *[_analyze_single_chapter(chapter, source_text, semaphore) for chapter in chapters]
+        *[_analyze_single_chapter(chapter, source_text, semaphore, force_refresh=force_refresh) for chapter in chapters]
     )
 
     aggregated = AggregatedAnalysis(list(analyses))
@@ -88,15 +95,29 @@ async def _analyze_single_chapter(
     chapter: Chapter,
     source_text: str,
     semaphore: asyncio.Semaphore,
+    force_refresh: bool = False,
 ) -> ChapterAnalysis:
     chapter_text = _chapter_text(chapter, source_text)
     cache_path = _chapter_cache_path(chapter, chapter_text)
 
+    if force_refresh and cache_path.exists():
+        logger.info("已请求强制刷新，章节叙事分析缓存将被忽略：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
+        cache_path.unlink(missing_ok=True)
+
     if cache_path.exists():
-        logger.info("章节叙事分析命中缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
+        logger.info("发现章节叙事分析缓存候选：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
         try:
-            payload = json.loads(cache_path.read_text(encoding="utf-8"))
-            return _parse_analysis(chapter.id, payload)
+            payload = _unwrap_cache_payload(json.loads(cache_path.read_text(encoding="utf-8")))
+            if not _has_required_source_refs(payload):
+                logger.warning("章节叙事分析缓存缺少来源引用，将刷新：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
+                cache_path.unlink(missing_ok=True)
+                raise _RefreshChapterCache()
+            analysis = _parse_analysis(chapter.id, payload)
+            _attach_source_positions(analysis, chapter_text)
+            logger.info("章节叙事分析命中缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
+            return analysis
+        except _RefreshChapterCache:
+            pass
         except json.JSONDecodeError as error:
             logger.warning("章节叙事分析缓存无效，已忽略：章节ID=%s，缓存路径=%s，错误=%s", chapter.id, cache_path, error)
             cache_path.unlink(missing_ok=True)
@@ -118,13 +139,15 @@ async def _analyze_single_chapter(
             logger.exception("章节叙事分析失败，已跳过本章：章节ID=%s，标题=%s，错误=%s", chapter.id, chapter.title, error)
             return _empty_analysis(chapter.id)
         (debug_dir / "model_output.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        cache_path.write_text(json.dumps(_cache_payload(payload), ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info("章节叙事分析已写入缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
-        return _parse_analysis(chapter.id, payload)
+        analysis = _parse_analysis(chapter.id, payload)
+        _attach_source_positions(analysis, chapter_text)
+        return analysis
 
 
 def _chapter_cache_key(chapter: Chapter, chapter_text: str) -> str:
-    digest = hashlib.sha256(f"chapter-analysis-v1\n{chapter.id}\n{chapter.title}\n{chapter_text}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{CACHE_SCHEMA_VERSION}\n{chapter.id}\n{chapter.title}\n{chapter_text}".encode("utf-8")).hexdigest()
     return digest
 
 
@@ -178,6 +201,7 @@ def _parse_character(item: dict[str, Any], chapter_id: str) -> Character:
         role=_text(item.get("role")) or "candidate",
         description=_text(item.get("description")),
         appearances=sorted(set(_text(value) for value in appearances if _text(value))),
+        source_refs=_source_refs(chapter_id, item),
     )
 
 
@@ -212,6 +236,7 @@ def _parse_event(item: dict[str, Any], chapter_id: str) -> Event:
         location=_text(item.get("location")),
         time_text=_text(item.get("time_text")),
         consequence=_text(item.get("consequence")),
+        source_refs=_source_refs(chapter_id, item),
     )
 
 
@@ -281,6 +306,7 @@ def _parse_causal_link(item: dict[str, Any], chapter_id: str) -> CausalLink:
 
 
 def _parse_scene(item: dict[str, Any]) -> Scene:
+    chapter_id = _text(item.get("chapter_id"))
     return Scene(
         title=_text(item.get("title")),
         location=_text(item.get("location")),
@@ -291,6 +317,7 @@ def _parse_scene(item: dict[str, Any]) -> Scene:
         event_titles=[_text(value) for value in item.get("event_titles", []) if _text(value)],
         characters=[_text(value) for value in item.get("characters", []) if _text(value)],
         adaptation_note=_text(item.get("adaptation_note")),
+        source_refs=_source_refs(chapter_id, item),
     )
 
 
@@ -335,6 +362,32 @@ def _attach_event_and_scene_ids(analysis: AggregatedAnalysis) -> None:
         scene.event_ids = [title_to_event_id[title] for title in scene.event_titles if title in title_to_event_id]
 
 
+def _attach_source_positions(analysis: ChapterAnalysis, chapter_text: str) -> None:
+    for character in analysis.characters:
+        _locate_refs(character.source_refs, chapter_text)
+    for event in analysis.events:
+        _locate_refs(event.source_refs, chapter_text)
+    for scene in analysis.scene_candidates:
+        _locate_refs(scene.source_refs, chapter_text)
+
+
+def _locate_refs(refs: list[SourceRef], chapter_text: str) -> None:
+    for ref in refs:
+        if ref.start_char >= 0 and ref.end_char >= ref.start_char:
+            continue
+        evidence = ref.evidence.strip()
+        if not evidence:
+            continue
+        index = chapter_text.find(evidence)
+        if index < 0 and len(evidence) > 20:
+            index = chapter_text.find(evidence[:20])
+            if index >= 0:
+                evidence = evidence[:20]
+        if index >= 0:
+            ref.start_char = index
+            ref.end_char = index + len(evidence)
+
+
 def _text(value: Any) -> str:
     return str(value).strip() if value is not None else ""
 
@@ -355,3 +408,78 @@ def _score(value: Any, default: int) -> int:
 
 def _has_name(item: dict[str, Any]) -> bool:
     return bool(_text(item.get("name")))
+
+
+def _has_required_source_refs(payload: dict[str, Any]) -> bool:
+    required_groups = ["characters", "events", "scene_candidates"]
+    has_any_required_item = False
+
+    for group in required_groups:
+        items = payload.get(group, [])
+        if not isinstance(items, list):
+            return False
+        for item in items:
+            if not isinstance(item, dict):
+                return False
+            has_any_required_item = True
+            refs = item.get("source_refs")
+            if not isinstance(refs, list) or not refs:
+                return False
+            if not any(isinstance(ref, dict) and _text(ref.get("evidence")) for ref in refs):
+                return False
+
+    return has_any_required_item
+
+
+def _cache_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "_cache_schema_version": CACHE_SCHEMA_VERSION,
+        "payload": payload,
+    }
+
+
+def _unwrap_cache_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("_cache_schema_version") == CACHE_SCHEMA_VERSION and isinstance(payload.get("payload"), dict):
+        return payload["payload"]
+    return payload
+
+
+def _source_refs(chapter_id: str, item: dict[str, Any]) -> list[SourceRef]:
+    refs = item.get("source_refs")
+    if isinstance(refs, list):
+        parsed_refs = [
+            _source_ref(
+                _text(ref.get("chapter_id")) or chapter_id,
+                _text(ref.get("evidence")),
+                ref.get("start_char"),
+                ref.get("end_char"),
+            )
+            for ref in refs
+            if isinstance(ref, dict)
+        ]
+        return [ref for ref in parsed_refs if ref.evidence or ref.chapter_id]
+
+    evidence = _text(item.get("evidence")) or _text(item.get("source_text")) or _text(item.get("source_evidence"))
+    if not evidence and chapter_id:
+        return [SourceRef(chapter_id=chapter_id)]
+    if not evidence:
+        return []
+    return [_source_ref(chapter_id, evidence, item.get("start_char"), item.get("end_char"))]
+
+
+def _source_ref(chapter_id: str, evidence: str, start_char: Any = None, end_char: Any = None) -> SourceRef:
+    return SourceRef(
+        chapter_id=chapter_id,
+        start_char=_int(start_char) if start_char is not None else -1,
+        end_char=_int(end_char) if end_char is not None else -1,
+        evidence=evidence,
+    )
+
+
+def _merge_source_refs(refs: list[SourceRef]) -> list[SourceRef]:
+    merged: dict[tuple[str, str], SourceRef] = {}
+    for ref in refs:
+        key = (ref.chapter_id, ref.evidence)
+        if key not in merged:
+            merged[key] = ref
+    return list(merged.values())

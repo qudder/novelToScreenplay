@@ -108,6 +108,17 @@ def start_document_analysis(document_id: str, background_tasks: BackgroundTasks)
     return result
 
 
+@router.post("/documents/{document_id}/analysis/retry", response_model=AnalysisStartResult)
+def retry_document_analysis(document_id: str, background_tasks: BackgroundTasks) -> AnalysisStartResult:
+    result = workspace_service.restart_analysis(document_id)
+    if not result:
+        logger.warning("重试叙事分析失败：文档ID=%s", document_id)
+        raise HTTPException(status_code=404, detail="文档不存在。")
+
+    background_tasks.add_task(workspace_service.run_analysis, document_id, True)
+    return result
+
+
 @router.get("/settings/deepseek")
 def get_deepseek_settings() -> dict[str, bool]:
     return {"configured": settings_service.has_deepseek_api_key()}

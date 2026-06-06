@@ -114,7 +114,22 @@ class WorkspaceService:
             message=record.analysis.message,
         )
 
-    async def run_analysis(self, document_id: str) -> None:
+    def restart_analysis(self, document_id: str) -> AnalysisStartResult | None:
+        record = document_store.get(document_id)
+        if not record:
+            return None
+
+        record.analysis.status = "running"
+        record.analysis.message = "叙事分析正在运行。"
+        document_store.save(record)
+        logger.info("已请求重新执行叙事分析：文档ID=%s，章节数=%s", document_id, len(record.chapters))
+        return AnalysisStartResult(
+            document_id=document_id,
+            status="running",
+            message=record.analysis.message,
+        )
+
+    async def run_analysis(self, document_id: str, force_refresh: bool = False) -> None:
         record = document_store.get(document_id)
         if not record:
             logger.warning("跳过叙事分析执行：文档不存在，文档ID=%s", document_id)
@@ -122,7 +137,7 @@ class WorkspaceService:
 
         try:
             logger.info("叙事分析开始执行：文档ID=%s，章节数=%s", document_id, len(record.chapters))
-            analysis = await analyze_chapters(record.chapters, record.source_text)
+            analysis = await analyze_chapters(record.chapters, record.source_text, force_refresh=force_refresh)
             record.analysis = AnalysisResult(
                 document_id=document_id,
                 status="completed",
@@ -139,6 +154,7 @@ class WorkspaceService:
                 causal_links=analysis.causal_links,
                 scenes=analysis.scenes,
                 chapter_analyses=analysis.chapter_analyses,
+                empty_chapter_ids=_empty_chapter_ids(analysis.chapter_analyses),
             )
             document_store.save(record)
             logger.info(
@@ -179,3 +195,26 @@ def _has_analysis_payload(payload: ImportResult) -> bool:
             payload.chapter_analyses,
         ]
     )
+
+
+def _empty_chapter_ids(chapter_analyses) -> list[str]:
+    empty_ids: list[str] = []
+    for analysis in chapter_analyses:
+        has_content = any(
+            [
+                analysis.characters,
+                analysis.locations,
+                analysis.time_markers,
+                analysis.events,
+                analysis.relationships,
+                analysis.conflicts,
+                analysis.dialogues,
+                analysis.actions,
+                analysis.motivations,
+                analysis.causal_links,
+                analysis.scene_candidates,
+            ]
+        )
+        if not has_content:
+            empty_ids.append(analysis.chapter_id)
+    return empty_ids
