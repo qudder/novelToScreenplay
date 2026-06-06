@@ -1,7 +1,6 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { FileText, KeyRound, PlayCircle, UploadCloud } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
-import { chapters as mockChapters } from "../../shared/mockData";
 import { studioApi } from "../../shared/api";
 import { getCurrentNovel, saveCurrentNovel, useCurrentNovel } from "../../shared/currentNovel";
 import type { Chapter, CurrentNovel } from "../../shared/types";
@@ -41,9 +40,9 @@ export function ImportPage() {
       : null
   );
 
-  const [chapters, setChapters] = useState<Chapter[]>(importedNovel?.chapters ?? mockChapters);
-  const [selectedFilename, setSelectedFilename] = useState(importedNovel?.filename ?? "示例文本");
-  const [statusMessage, setStatusMessage] = useState(importedNovel?.message ?? "当前展示示例分章结果。");
+  const [chapters, setChapters] = useState<Chapter[]>(importedNovel?.chapters ?? []);
+  const [selectedFilename, setSelectedFilename] = useState(importedNovel?.filename ?? "尚未导入小说");
+  const [statusMessage, setStatusMessage] = useState(importedNovel?.message ?? "请先上传小说文件。");
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [documentId, setDocumentId] = useState(importedNovel?.documentId ?? "");
@@ -348,7 +347,7 @@ export function ImportPage() {
             ) : (
               <article className="compact-card">
                 <strong>暂无章节</strong>
-                <p>文件已读取，但没有解析到有效正文。</p>
+                <p>{documentId ? "文件已读取，但没有解析到有效正文。" : "上传小说后会在这里展示分章预览。"}</p>
               </article>
             )}
           </div>

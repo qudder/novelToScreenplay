@@ -19,7 +19,8 @@ def extract_text(filename: str, content: bytes) -> str:
         supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
         raise UnsupportedDocumentError(f"不支持的文件类型：{suffix or '未知'}。支持：{supported}")
 
-    return _extract_docx_text(content) if suffix == ".docx" else _decode_text(content)
+    raw_text = _extract_docx_text(content) if suffix == ".docx" else _decode_text(content)
+    return _normalize_text(raw_text)
 
 
 def parse_document(filename: str, content: bytes) -> list[Chapter]:
@@ -34,25 +35,31 @@ def split_into_chapters(text: str) -> list[Chapter]:
 
     matches = list(_chapter_heading_pattern().finditer(normalized))
     if not matches:
-        return [_build_chapter("chapter-1", "全文", normalized)]
+        return [_build_chapter("chapter-1", "全文", normalized, 0, len(normalized))]
 
     chapters: list[Chapter] = []
     preface = normalized[: matches[0].start()].strip()
     if preface:
-        chapters.append(_build_chapter("chapter-1", "序章", preface))
+        preface_start = normalized.find(preface)
+        chapters.append(_build_chapter("chapter-1", "序章", preface, preface_start, preface_start + len(preface)))
 
     for index, match in enumerate(matches):
         next_start = matches[index + 1].start() if index + 1 < len(matches) else len(normalized)
-        block = normalized[match.start() : next_start].strip()
+        raw_block = normalized[match.start() : next_start]
+        block = raw_block.strip()
+        leading_trim = len(raw_block) - len(raw_block.lstrip())
+        trailing_trim = len(raw_block.rstrip())
+        source_start = match.start() + leading_trim
+        source_end = match.start() + trailing_trim
         lines = block.splitlines()
         title = lines[0].strip()
         body = "\n".join(lines[1:]).strip() or title
-        chapters.append(_build_chapter(f"chapter-{len(chapters) + 1}", title, body))
+        chapters.append(_build_chapter(f"chapter-{len(chapters) + 1}", title, body, source_start, source_end))
 
     return chapters
 
 
-def _build_chapter(chapter_id: str, title: str, body: str) -> Chapter:
+def _build_chapter(chapter_id: str, title: str, body: str, source_start: int, source_end: int) -> Chapter:
     summary = _make_summary(body)
     return Chapter(
         id=chapter_id,
@@ -61,6 +68,8 @@ def _build_chapter(chapter_id: str, title: str, body: str) -> Chapter:
         word_count=len(re.sub(r"\s+", "", body)),
         conflict=_infer_conflict(body),
         character_ids=[],
+        source_start=source_start,
+        source_end=source_end,
     )
 
 

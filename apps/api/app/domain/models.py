@@ -10,6 +10,8 @@ class Chapter(BaseModel):
     word_count: int
     conflict: str
     character_ids: list[str]
+    source_start: int = -1
+    source_end: int = -1
 
 
 class SourceRef(BaseModel):

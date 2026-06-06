@@ -30,13 +30,10 @@ type SourceCompareModalProps = {
 };
 
 export function buildChapterSourceRef(chapter: Chapter, chapters: Chapter[], sourceText: string): SourceRef {
-  const fallbackStart = 0;
-  const titleStart = sourceText.indexOf(chapter.title);
-  const startChar = titleStart >= 0 ? titleStart : fallbackStart;
-  const currentIndex = chapters.findIndex((item) => item.id === chapter.id);
-  const nextChapter = currentIndex >= 0 ? chapters[currentIndex + 1] : undefined;
-  const nextStart = nextChapter ? sourceText.indexOf(nextChapter.title, startChar + chapter.title.length) : -1;
-  const endChar = nextStart > startChar ? nextStart : sourceText.length;
+  const chapterRanges = buildChapterRanges(chapters, sourceText);
+  const range = chapterRanges.get(chapter.id);
+  const startChar = range?.startChar ?? 0;
+  const endChar = range?.endChar ?? sourceText.length;
 
   return {
     chapterId: chapter.id,
@@ -61,16 +58,17 @@ type SourceCompareContentProps = {
 
 function SourceCompareContent({ payload, sourceText, chapters, onClose }: SourceCompareContentProps) {
   const [selectedRefIndex, setSelectedRefIndex] = useState(0);
+  const compareRefs = useMemo(
+    () => (payload.type === "chapter" ? [buildChapterSourceRef(payload.chapter, chapters, sourceText)] : payload.refs),
+    [chapters, payload, sourceText]
+  );
   const normalizedRefs = useMemo(
-    () => payload.refs.map((ref) => normalizeRefToSourceText(ref, chapters, sourceText) ?? ref),
-    [chapters, payload.refs, sourceText]
+    () => (payload.type === "chapter" ? compareRefs : compareRefs.map((ref) => normalizeRefToSourceText(ref, chapters, sourceText) ?? ref)),
+    [chapters, compareRefs, payload.type, sourceText]
   );
   const selectedRef = normalizedRefs[selectedRefIndex];
-  const primaryRef = selectedRef ?? normalizeRefToSourceText(choosePrimaryRef(payload.refs), chapters, sourceText);
-  const resolvedRef =
-    payload.type === "chapter" && (!primaryRef || primaryRef.startChar < 0)
-      ? buildChapterSourceRef(payload.chapter, chapters, sourceText)
-      : primaryRef;
+  const primaryRef = selectedRef ?? normalizeRefToSourceText(choosePrimaryRef(compareRefs), chapters, sourceText);
+  const resolvedRef = payload.type === "chapter" ? compareRefs[0] : primaryRef;
   const sourceRange = buildSourceRange(sourceText, resolvedRef);
 
   return (
@@ -109,8 +107,8 @@ function SourceCompareContent({ payload, sourceText, chapters, onClose }: Source
             {renderPayloadData(payload)}
             <div className="source-ref-list">
               <strong>原文证据</strong>
-              {payload.refs.length > 0 ? (
-                payload.refs.map((ref, index) => {
+              {compareRefs.length > 0 ? (
+                compareRefs.map((ref, index) => {
                   const normalizedRef = normalizedRefs[index];
                   return (
                     <button
@@ -144,16 +142,72 @@ function normalizeRefToSourceText(ref: SourceRef | undefined, chapters: Chapter[
   const chapter = chapters.find((item) => item.id === ref.chapterId);
   if (!chapter) return ref;
 
-  const chapterStart = sourceText.indexOf(chapter.title);
-  if (chapterStart < 0) return ref;
-  const chapterBodyStart = sourceText.indexOf("\n", chapterStart);
-  const offset = chapterBodyStart >= 0 ? chapterBodyStart + 1 : chapterStart + chapter.title.length;
+  const range = buildChapterRanges(chapters, sourceText).get(chapter.id);
+  if (!range) return ref;
+  const chapterBodyStart = sourceText.indexOf("\n", range.startChar);
+  const offset = chapterBodyStart >= 0 && chapterBodyStart < range.endChar ? chapterBodyStart + 1 : range.startChar + chapter.title.length;
 
   return {
     ...ref,
     startChar: offset + ref.startChar,
     endChar: offset + ref.endChar
   };
+}
+
+function buildChapterRanges(chapters: Chapter[], sourceText: string) {
+  const starts: Array<{ chapter: Chapter; startChar: number }> = [];
+  let searchFrom = 0;
+
+  for (const chapter of chapters) {
+    const chapterIndex = chapters.findIndex((item) => item.id === chapter.id);
+    const nextChapter = chapterIndex >= 0 ? chapters[chapterIndex + 1] : undefined;
+    const startChar = findChapterTitleStart(sourceText, chapter, nextChapter, searchFrom);
+    if (startChar < 0) {
+      continue;
+    }
+    starts.push({ chapter, startChar });
+    searchFrom = startChar + chapter.title.length;
+  }
+
+  const ranges = new Map<string, { startChar: number; endChar: number }>();
+  starts.forEach((item, index) => {
+    ranges.set(item.chapter.id, {
+      startChar: item.startChar,
+      endChar: starts[index + 1]?.startChar ?? sourceText.length
+    });
+  });
+  return ranges;
+}
+
+function findChapterTitleStart(sourceText: string, chapter: Chapter, nextChapter: Chapter | undefined, searchFrom: number) {
+  let index = sourceText.indexOf(chapter.title, searchFrom);
+  while (index >= 0) {
+    if (isStandaloneTitle(sourceText, index, chapter.title) && hasChapterLikeDistance(sourceText, chapter, nextChapter, index)) {
+      return index;
+    }
+    index = sourceText.indexOf(chapter.title, index + chapter.title.length);
+  }
+  return -1;
+}
+
+function isStandaloneTitle(sourceText: string, index: number, title: string) {
+  const previousLineBreak = Math.max(sourceText.lastIndexOf("\n", index - 1), sourceText.lastIndexOf("\r", index - 1));
+  const beforeTitle = sourceText.slice(previousLineBreak + 1, index);
+  if (beforeTitle.trim()) return false;
+
+  const lineEndIndex = sourceText.indexOf("\n", index);
+  const line = sourceText.slice(index, lineEndIndex >= 0 ? lineEndIndex : sourceText.length).trim();
+  return line === title.trim();
+}
+
+function hasChapterLikeDistance(sourceText: string, chapter: Chapter, nextChapter: Chapter | undefined, titleStart: number) {
+  if (!nextChapter) return true;
+  const nextStart = sourceText.indexOf(nextChapter.title, titleStart + chapter.title.length);
+  if (nextStart < 0) return true;
+
+  const distance = nextStart - titleStart;
+  const minBodyDistance = Math.min(180, Math.max(40, Math.floor(chapter.wordCount * 0.08)));
+  return distance >= minBodyDistance;
 }
 
 function buildSourceRange(sourceText: string, ref?: SourceRef) {
