@@ -7,6 +7,31 @@ export type Chapter = {
   characterIds: string[];
 };
 
+export type ChapterDto = {
+  id: string;
+  title: string;
+  summary: string;
+  word_count: number;
+  conflict: string;
+  character_ids: string[];
+};
+
+export type ImportDocumentResult = {
+  filename: string;
+  status: "queued" | "parsed";
+  message: string;
+  chapters: ChapterDto[];
+  source_text: string;
+};
+
+export type CurrentNovel = {
+  filename: string;
+  message: string;
+  sourceText: string;
+  chapters: Chapter[];
+  importedAt: string;
+};
+
 export type Character = {
   id: string;
   name: string;
@@ -43,4 +68,3 @@ export type Scene = {
   characterIds: string[];
   dramaticFunction: string;
 };
-

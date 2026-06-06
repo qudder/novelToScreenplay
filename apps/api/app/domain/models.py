@@ -61,4 +61,5 @@ class ImportResult(BaseModel):
     filename: str
     status: Literal["queued", "parsed"]
     message: str
-
+    chapters: list[Chapter] = []
+    source_text: str = ""
