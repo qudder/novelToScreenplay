@@ -1,10 +1,17 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from app.domain.models import ImportResult, Workspace
 from app.services.document_parser import UnsupportedDocumentError
+from app.services.deepseek_client import DeepSeekConfigurationError
+from app.services.settings_service import settings_service
 from app.services.workspace_service import workspace_service
 
 router = APIRouter()
+
+
+class DeepSeekApiKeyPayload(BaseModel):
+    api_key: str = Field(min_length=1)
 
 
 @router.get("/workspace", response_model=Workspace)
@@ -43,3 +50,16 @@ async def import_document(file: UploadFile = File(...)) -> ImportResult:
         return await workspace_service.import_document(file)
     except UnsupportedDocumentError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except DeepSeekConfigurationError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.get("/settings/deepseek")
+def get_deepseek_settings() -> dict[str, bool]:
+    return {"configured": settings_service.has_deepseek_api_key()}
+
+
+@router.post("/settings/deepseek")
+def save_deepseek_settings(payload: DeepSeekApiKeyPayload) -> dict[str, bool]:
+    settings_service.save_deepseek_api_key(payload.api_key)
+    return {"configured": True}

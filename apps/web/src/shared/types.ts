@@ -21,6 +21,7 @@ export type ImportDocumentResult = {
   status: "queued" | "parsed";
   message: string;
   chapters: ChapterDto[];
+  characters: CharacterDto[];
   source_text: string;
 };
 
@@ -29,10 +30,21 @@ export type CurrentNovel = {
   message: string;
   sourceText: string;
   chapters: Chapter[];
+  characters: Character[];
   importedAt: string;
 };
 
 export type Character = {
+  id: string;
+  name: string;
+  aliases: string[];
+  importance: number;
+  role: string;
+  description: string;
+  appearances: string[];
+};
+
+export type CharacterDto = {
   id: string;
   name: string;
   aliases: string[];

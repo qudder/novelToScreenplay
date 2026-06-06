@@ -25,7 +25,7 @@ npm install
 npm run dev
 ```
 
-开发环境下，前端默认通过 Vite 代理请求 `/api`，后端需运行在 `http://127.0.0.1:8000`。
+开发环境下，前端默认通过 Vite 代理请求 `/api`，后端需运行在 `http://127.0.0.1:8010`。
 
 ### 后端
 
@@ -34,11 +34,23 @@ cd apps/api
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8010
 ```
+
+角色抽取使用 DeepSeek API。请在本地创建 `apps/api/.env`，不要提交该文件：
+
+```text
+DEEPSEEK_API_KEY=你的 DeepSeek API Key
+```
+
+也可以在前端“小说导入”页的 DeepSeek 配置面板中输入 API Key，后端会保存到本地 `apps/api/.env`。
+
+Prompt 配置在 `apps/api/app/config/character_extraction_prompt.md`。每个章节会按章节内容 hash 写入 `apps/api/app/.cache/deepseek`，同一章节内容不变时不会重复请求模型。
 
 ## 文档
 
 规划说明见 [docs/architecture-plan.md](docs/architecture-plan.md)。
 
 PR 提交与合并约束见 [docs/pr-guidelines.md](docs/pr-guidelines.md)。
+
+角色管理调研与实现说明见 [docs/character-management-research.md](docs/character-management-research.md)。

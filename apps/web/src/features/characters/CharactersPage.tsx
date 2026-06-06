@@ -1,11 +1,14 @@
 import { Merge, SortDesc } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { characters } from "../../shared/mockData";
+import { useCurrentNovel } from "../../shared/currentNovel";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
 export function CharactersPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
-  const sortedCharacters = [...characters].sort((a, b) => b.importance - a.importance);
+  const currentNovel = useCurrentNovel();
+  const visibleCharacters = currentNovel?.characters?.length ? currentNovel.characters : characters;
+  const sortedCharacters = [...visibleCharacters].sort((a, b) => b.importance - a.importance);
 
   return (
     <section ref={ref} className="page">
@@ -15,6 +18,11 @@ export function CharactersPage() {
         description="管理人物卡片、别名合并和重要性排序，为人物关系图和剧本改写提供基础。"
       />
       <div className="toolbar animate-in">
+        {currentNovel ? (
+          <div className="current-novel-banner inline-banner">
+            当前小说：{currentNovel.filename} · {sortedCharacters.length} 个角色候选
+          </div>
+        ) : null}
         <button className="ghost-button" type="button">
           <Merge size={16} />
           合并别名
@@ -38,10 +46,12 @@ export function CharactersPage() {
                 <span key={alias}>{alias}</span>
               ))}
             </div>
+            <small className="appearance-line">
+              出场章节：{character.appearances.length > 0 ? character.appearances.join("、") : "待抽取"}
+            </small>
           </article>
         ))}
       </div>
     </section>
   );
 }
-
