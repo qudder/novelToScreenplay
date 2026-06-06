@@ -190,6 +190,56 @@ button:disabled {
   gap: 10px;
 }
 
+.novel-library-panel {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.novel-switcher-list {
+  display: grid;
+  gap: 8px;
+}
+
+.novel-switcher-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: stretch;
+  padding: 8px;
+  border: 1px solid #dbe5e3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.novel-switcher-item.active {
+  border-color: #2f6f73;
+  background: #edf6f5;
+}
+
+.novel-switcher-item > button:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #172325;
+  text-align: left;
+  cursor: pointer;
+}
+
+.novel-switcher-item strong,
+.novel-switcher-item small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.novel-switcher-item small {
+  color: #6a7d80;
+}
+
 .text-input {
   width: 100%;
   min-height: 38px;

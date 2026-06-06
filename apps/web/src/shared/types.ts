@@ -5,6 +5,8 @@ export type Chapter = {
   wordCount: number;
   conflict: string;
   characterIds: string[];
+  sourceStart?: number;
+  sourceEnd?: number;
 };
 
 export type ChapterDto = {
@@ -14,6 +16,8 @@ export type ChapterDto = {
   word_count: number;
   conflict: string;
   character_ids: string[];
+  source_start?: number;
+  source_end?: number;
 };
 
 export type SourceRef = {

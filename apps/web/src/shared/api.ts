@@ -52,7 +52,9 @@ function mapChapter(dto: ChapterDto): Chapter {
     summary: dto.summary,
     wordCount: dto.word_count,
     conflict: dto.conflict,
-    characterIds: dto.character_ids
+    characterIds: dto.character_ids,
+    sourceStart: dto.source_start ?? -1,
+    sourceEnd: dto.source_end ?? -1
   };
 }
 
@@ -197,7 +199,9 @@ function toChapterDto(chapter: Chapter): ChapterDto {
     summary: chapter.summary,
     word_count: chapter.wordCount,
     conflict: chapter.conflict,
-    character_ids: chapter.characterIds
+    character_ids: chapter.characterIds,
+    source_start: chapter.sourceStart ?? -1,
+    source_end: chapter.sourceEnd ?? -1
   };
 }
 

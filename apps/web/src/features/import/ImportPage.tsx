@@ -1,9 +1,16 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
-import { FileText, KeyRound, PlayCircle, UploadCloud } from "lucide-react";
+import { BookMarked, FileText, KeyRound, PlayCircle, Trash2, UploadCloud } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
-import { chapters as mockChapters } from "../../shared/mockData";
 import { studioApi } from "../../shared/api";
-import { getCurrentNovel, saveCurrentNovel, useCurrentNovel } from "../../shared/currentNovel";
+import {
+  getActiveNovelId,
+  getCurrentNovel,
+  removeNovelFromLibrary,
+  saveCurrentNovel,
+  switchCurrentNovel,
+  useCurrentNovel,
+  useNovelLibrary
+} from "../../shared/currentNovel";
 import type { Chapter, CurrentNovel } from "../../shared/types";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 import { buildChapterSourceRef, SourceCompareModal, type ComparePayload } from "../../shared/SourceCompareModal";
@@ -30,6 +37,7 @@ export function ImportPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const importedNovel = useCurrentNovel();
+  const novelLibrary = useNovelLibrary();
   const latestImportRef = useRef<Pick<CurrentNovel, "filename" | "sourceText" | "chapters" | "importedAt"> | null>(
     importedNovel
       ? {
@@ -41,9 +49,9 @@ export function ImportPage() {
       : null
   );
 
-  const [chapters, setChapters] = useState<Chapter[]>(importedNovel?.chapters ?? mockChapters);
-  const [selectedFilename, setSelectedFilename] = useState(importedNovel?.filename ?? "示例文本");
-  const [statusMessage, setStatusMessage] = useState(importedNovel?.message ?? "当前展示示例分章结果。");
+  const [chapters, setChapters] = useState<Chapter[]>(importedNovel?.chapters ?? []);
+  const [selectedFilename, setSelectedFilename] = useState(importedNovel?.filename ?? "尚未导入小说");
+  const [statusMessage, setStatusMessage] = useState(importedNovel?.message ?? "请先上传小说文件。");
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [documentId, setDocumentId] = useState(importedNovel?.documentId ?? "");
@@ -60,6 +68,7 @@ export function ImportPage() {
   const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 DeepSeek 配置...");
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [comparePayload, setComparePayload] = useState<ComparePayload | null>(null);
+  const activeNovelId = getActiveNovelId();
 
   function openChapterCompare(chapter: Chapter) {
     const sourceText = latestImportRef.current?.sourceText ?? importedNovel?.sourceText ?? "";
@@ -124,6 +133,21 @@ export function ImportPage() {
     } finally {
       setIsSavingKey(false);
     }
+  }
+
+  function handleSwitchNovel(targetDocumentId: string) {
+    const nextNovel = switchCurrentNovel(targetDocumentId);
+    if (!nextNovel) {
+      setErrorMessage("切换小说失败，本地缓存可能已损坏。");
+      return;
+    }
+    setComparePayload(null);
+    setErrorMessage(null);
+  }
+
+  function handleRemoveNovel(targetDocumentId: string) {
+    removeNovelFromLibrary(targetDocumentId);
+    setComparePayload(null);
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -263,6 +287,35 @@ export function ImportPage() {
       />
       <div className="two-column">
         <div className="panel animate-in">
+          <div className="settings-panel novel-library-panel">
+            <div className="section-title">
+              <BookMarked size={18} />
+              <h2>本地小说库</h2>
+            </div>
+            <div className="novel-switcher-list">
+              {novelLibrary.length > 0 ? (
+                novelLibrary.map((item) => (
+                  <div className={`novel-switcher-item${item.documentId === activeNovelId ? " active" : ""}`} key={item.documentId}>
+                    <button type="button" onClick={() => handleSwitchNovel(item.documentId)}>
+                      <strong>{item.filename}</strong>
+                      <small>
+                        {item.chapterCount} 章 · {item.analysisStatus ?? "idle"} · {item.eventCount} 事件 · {item.sceneCount} 场景
+                      </small>
+                    </button>
+                    <button className="icon-button" type="button" aria-label={`删除 ${item.filename} 本地缓存`} onClick={() => handleRemoveNovel(item.documentId)}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <article className="compact-card">
+                  <strong>暂无缓存小说</strong>
+                  <p>导入小说后会自动保存到本地小说库。</p>
+                </article>
+              )}
+            </div>
+          </div>
+
           <div className="settings-panel">
             <div className="section-title">
               <KeyRound size={18} />
@@ -348,7 +401,7 @@ export function ImportPage() {
             ) : (
               <article className="compact-card">
                 <strong>暂无章节</strong>
-                <p>文件已读取，但没有解析到有效正文。</p>
+                <p>{documentId ? "文件已读取，但没有解析到有效正文。" : "上传小说后会在这里展示分章预览。"}</p>
               </article>
             )}
           </div>

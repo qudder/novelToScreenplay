@@ -31,7 +31,7 @@ export type ScreenplayDraft = {
 };
 
 export function buildDraftFromNovel(novel: CurrentNovel): ScreenplayDraft {
-  const existingDraft = getScreenplayDraft();
+  const existingDraft = getScreenplayDraft(novel.documentId);
   const existingScenes = new Map(existingDraft?.scenes.map((scene) => [scene.sceneId, scene]));
   const sceneMaterials = buildSceneMaterials(novel);
   const scenes = sceneMaterials.map((scene, index) => {
@@ -73,19 +73,24 @@ export function buildDraftFromNovel(novel: CurrentNovel): ScreenplayDraft {
   };
 }
 
-export function getScreenplayDraft(): ScreenplayDraft | null {
-  const raw = window.localStorage.getItem(STORAGE_KEY);
+export function getScreenplayDraft(documentId?: string): ScreenplayDraft | null {
+  const raw = window.localStorage.getItem(screenplayStorageKey(documentId)) ?? window.localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
 
   try {
-    return normalizeScreenplayDraft(JSON.parse(raw) as ScreenplayDraft);
+    const draft = normalizeScreenplayDraft(JSON.parse(raw) as ScreenplayDraft);
+    if (documentId && draft.documentId && draft.documentId !== documentId) {
+      return null;
+    }
+    return draft;
   } catch {
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(screenplayStorageKey(documentId));
     return null;
   }
 }
 
 export function saveScreenplayDraft(draft: ScreenplayDraft) {
+  window.localStorage.setItem(screenplayStorageKey(draft.documentId), JSON.stringify(draft));
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
   window.dispatchEvent(new CustomEvent("screenplay-draft-updated"));
 }
@@ -288,4 +293,8 @@ function normalizeScreenplayDraft(draft: ScreenplayDraft): ScreenplayDraft {
       shotPlans: scene.shotPlans ?? []
     }))
   };
+}
+
+function screenplayStorageKey(documentId?: string) {
+  return documentId ? `${STORAGE_KEY}.${documentId}` : STORAGE_KEY;
 }

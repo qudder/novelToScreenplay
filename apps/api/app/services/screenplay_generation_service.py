@@ -52,7 +52,7 @@ async def complete_scene_screenplay(payload: ScreenplayCompletionRequest) -> Scr
         user_prompt=user_prompt,
         debug_context=debug_context,
         temperature=0.35,
-        max_tokens=4096,
+        max_tokens=12000,
     )
     logger.info("场景剧本生成完成：文档ID=%s，场景ID=%s，剧本字符数=%s", payload.document_id, payload.scene_id, len(content))
     return ScreenplayCompletionResult(content=content)
