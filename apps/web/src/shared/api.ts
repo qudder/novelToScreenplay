@@ -1,4 +1,4 @@
-import { chapters, characters, events, relationships, scenes } from "./mockData";
+﻿import { chapters, characters, events, relationships, scenes } from "./mockData";
 import type {
   Chapter,
   ChapterDto,
@@ -80,6 +80,79 @@ function mapScene(dto: SceneDto): Scene {
   };
 }
 
+function toChapterDto(chapter: Chapter): ChapterDto {
+  return {
+    id: chapter.id,
+    title: chapter.title,
+    summary: chapter.summary,
+    word_count: chapter.wordCount,
+    conflict: chapter.conflict,
+    character_ids: chapter.characterIds
+  };
+}
+
+function toEventDto(event: Event): EventDto {
+  return {
+    id: event.id,
+    chapter_id: event.chapterId,
+    title: event.title,
+    summary: event.summary,
+    conflict: event.conflict,
+    character_ids: event.characterIds,
+    characters: event.characters ?? [],
+    location: event.location ?? "",
+    time_text: event.timeText ?? "",
+    consequence: event.consequence ?? ""
+  };
+}
+
+function toRelationshipDto(relationship: Relationship): RelationshipDto {
+  return {
+    id: relationship.id,
+    source: relationship.source,
+    target: relationship.target,
+    type: relationship.type,
+    strength: relationship.strength,
+    evidence: relationship.evidence ?? ""
+  };
+}
+
+function toSceneDto(scene: Scene): SceneDto {
+  return {
+    id: scene.id,
+    title: scene.title,
+    location: scene.location,
+    time_of_day: scene.timeOfDay,
+    event_ids: scene.eventIds,
+    character_ids: scene.characterIds,
+    dramatic_function: scene.dramaticFunction,
+    event_titles: scene.eventTitles ?? [],
+    characters: scene.characters ?? [],
+    adaptation_note: scene.adaptationNote ?? ""
+  };
+}
+
+function mapImportResult(result: ImportDocumentResult) {
+  return {
+    documentId: result.document_id,
+    filename: result.filename,
+    message: result.message,
+    sourceText: result.source_text,
+    chapters: result.chapters.map(mapChapter),
+    characters: result.characters.map(mapCharacter),
+    locations: result.locations,
+    timeMarkers: result.time_markers,
+    events: result.events.map(mapEvent),
+    relationships: result.relationships.map(mapRelationship),
+    conflicts: result.conflicts,
+    dialogues: result.dialogues,
+    actions: result.actions,
+    motivations: result.motivations,
+    causalLinks: result.causal_links,
+    scenes: result.scenes.map(mapScene)
+  };
+}
+
 function mapAnalysisResult(result: AnalysisResultDto) {
   return {
     documentId: result.document_id,
@@ -142,25 +215,77 @@ export const studioApi = {
       throw new Error(detail);
     }
 
-    const result = (await response.json()) as ImportDocumentResult;
-    return {
-      documentId: result.document_id,
-      filename: result.filename,
-      message: result.message,
-      sourceText: result.source_text,
-      chapters: result.chapters.map(mapChapter),
-      characters: result.characters.map(mapCharacter),
-      locations: result.locations,
-      timeMarkers: result.time_markers,
-      events: result.events.map(mapEvent),
-      relationships: result.relationships.map(mapRelationship),
-      conflicts: result.conflicts,
-      dialogues: result.dialogues,
-      actions: result.actions,
-      motivations: result.motivations,
-      causalLinks: result.causal_links,
-      scenes: result.scenes.map(mapScene)
+    return mapImportResult((await response.json()) as ImportDocumentResult);
+  },
+
+  async getDocument(documentId: string): Promise<ReturnType<typeof mapImportResult>> {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}`);
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "读取文档失败。");
+    }
+
+    return mapImportResult((await response.json()) as ImportDocumentResult);
+  },
+
+  async restoreDocument(snapshot: {
+    documentId?: string;
+    analysisStatus?: "idle" | "running" | "completed" | "failed";
+    filename: string;
+    message: string;
+    sourceText: string;
+    chapters: Chapter[];
+    characters: Character[];
+    locations: ImportDocumentResult["locations"];
+    timeMarkers: ImportDocumentResult["time_markers"];
+    events: Event[];
+    relationships: Relationship[];
+    conflicts: ImportDocumentResult["conflicts"];
+    dialogues: ImportDocumentResult["dialogues"];
+    actions: ImportDocumentResult["actions"];
+    motivations: ImportDocumentResult["motivations"];
+    causalLinks: ImportDocumentResult["causal_links"];
+    scenes: Scene[];
+  }): Promise<ReturnType<typeof mapImportResult>> {
+    if (!snapshot.documentId) {
+      throw new Error("缺少文档 ID。");
+    }
+
+    const payload: ImportDocumentResult = {
+      document_id: snapshot.documentId,
+      filename: snapshot.filename,
+      status: snapshot.analysisStatus === "running" ? "queued" : "parsed",
+      message: snapshot.message,
+      source_text: snapshot.sourceText,
+      chapters: snapshot.chapters.map(toChapterDto),
+      characters: snapshot.characters,
+      locations: snapshot.locations,
+      time_markers: snapshot.timeMarkers,
+      events: snapshot.events.map(toEventDto),
+      relationships: snapshot.relationships.map(toRelationshipDto),
+      conflicts: snapshot.conflicts,
+      dialogues: snapshot.dialogues,
+      actions: snapshot.actions,
+      motivations: snapshot.motivations,
+      causal_links: snapshot.causalLinks,
+      scenes: snapshot.scenes.map(toSceneDto)
     };
+
+    const response = await fetch(`${API_BASE_URL}/api/documents/${snapshot.documentId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "恢复文档失败。");
+    }
+
+    return mapImportResult((await response.json()) as ImportDocumentResult);
   },
 
   async startDocumentAnalysis(documentId: string): Promise<{
@@ -190,7 +315,7 @@ export const studioApi = {
 
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      throw new Error(payload?.detail ?? "读取叙事分析状态失败。");
+      throw new Error(payload?.detail ?? "读取叙事分析失败。");
     }
 
     return mapAnalysisResult((await response.json()) as AnalysisResultDto);
@@ -199,7 +324,7 @@ export const studioApi = {
   async getDeepSeekSettings(): Promise<{ configured: boolean }> {
     const response = await fetch(`${API_BASE_URL}/api/settings/deepseek`);
     if (!response.ok) {
-      throw new Error("无法读取 DeepSeek 配置状态。");
+      throw new Error("读取 DeepSeek 配置失败。");
     }
 
     return (await response.json()) as { configured: boolean };

@@ -94,8 +94,12 @@ async def _analyze_single_chapter(
 
     if cache_path.exists():
         logger.info("章节叙事分析命中缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
-        payload = json.loads(cache_path.read_text(encoding="utf-8"))
-        return _parse_analysis(chapter.id, payload)
+        try:
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            return _parse_analysis(chapter.id, payload)
+        except json.JSONDecodeError as error:
+            logger.warning("章节叙事分析缓存无效，已忽略：章节ID=%s，缓存路径=%s，错误=%s", chapter.id, cache_path, error)
+            cache_path.unlink(missing_ok=True)
 
     async with semaphore:
         user_prompt = _build_user_prompt(chapter, chapter_text)
@@ -104,10 +108,15 @@ async def _analyze_single_chapter(
         logger.info("请求章节叙事分析：章节ID=%s，标题=%s，正文字符数=%s，调试目录=%s", chapter.id, chapter.title, len(chapter_text), debug_dir)
         (debug_dir / "user_prompt.md").write_text(user_prompt, encoding="utf-8")
         (debug_dir / "chapter_text.txt").write_text(chapter_text, encoding="utf-8")
-        payload = await deepseek_client.extract_json(
-            user_prompt,
-            debug_context=f"{chapter.id}-{_chapter_cache_key(chapter, chapter_text)[:12]}",
-        )
+        try:
+            payload = await deepseek_client.extract_json(
+                user_prompt,
+                debug_context=f"{chapter.id}-{_chapter_cache_key(chapter, chapter_text)[:12]}",
+            )
+        except Exception as error:
+            (debug_dir / "chapter_error.txt").write_text(repr(error), encoding="utf-8")
+            logger.exception("章节叙事分析失败，已跳过本章：章节ID=%s，标题=%s，错误=%s", chapter.id, chapter.title, error)
+            return _empty_analysis(chapter.id)
         (debug_dir / "model_output.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info("章节叙事分析已写入缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
@@ -135,6 +144,10 @@ def _build_user_prompt(chapter: Chapter, chapter_text: str) -> str:
         "chapter_text:\n"
         f"{chapter_text}"
     )
+
+
+def _empty_analysis(chapter_id: str) -> ChapterAnalysis:
+    return ChapterAnalysis(chapter_id=chapter_id, emotion_arc=EmotionArc())
 
 
 def _parse_analysis(chapter_id: str, payload: dict[str, Any]) -> ChapterAnalysis:

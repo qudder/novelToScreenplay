@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   BookOpen,
@@ -7,6 +8,9 @@ import {
   Upload,
   Users
 } from "lucide-react";
+import { studioApi } from "../../shared/api";
+import { getCurrentNovel, saveCurrentNovel } from "../../shared/currentNovel";
+import type { CurrentNovel } from "../../shared/types";
 
 const navItems = [
   { to: "/import", label: "小说导入", icon: Upload },
@@ -18,6 +22,51 @@ const navItems = [
 ];
 
 export function AppShell() {
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+
+    async function refreshStoredAnalysis() {
+      const currentNovel = getCurrentNovel();
+      if (!currentNovel?.documentId) {
+        return;
+      }
+
+      try {
+        const documentResult = await getOrRestoreDocument(currentNovel);
+        if (cancelled) {
+          return;
+        }
+
+        const persistedNovel = mergeDocumentResult(currentNovel, documentResult);
+        saveCurrentNovel(persistedNovel);
+
+        const result = await studioApi.getDocumentAnalysis(currentNovel.documentId);
+        if (cancelled) {
+          return;
+        }
+
+        const updatedNovel = mergeAnalysisResult(persistedNovel, result);
+        saveCurrentNovel(updatedNovel);
+
+        if (result.status === "running") {
+          timer = window.setTimeout(refreshStoredAnalysis, 2000);
+        }
+      } catch {
+        // Keep the local snapshot usable when the API is offline or the in-memory document has expired.
+      }
+    }
+
+    refreshStoredAnalysis();
+
+    return () => {
+      cancelled = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, []);
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -47,3 +96,73 @@ export function AppShell() {
   );
 }
 
+async function getOrRestoreDocument(currentNovel: CurrentNovel) {
+  try {
+    return await studioApi.getDocument(currentNovel.documentId ?? "");
+  } catch (error) {
+    if (!canRestoreDocument(currentNovel)) {
+      throw error;
+    }
+    return studioApi.restoreDocument(currentNovel);
+  }
+}
+
+function canRestoreDocument(currentNovel: CurrentNovel): boolean {
+  return Boolean(currentNovel.documentId && currentNovel.filename && currentNovel.sourceText && currentNovel.chapters.length > 0);
+}
+
+function mergeAnalysisResult(
+  currentNovel: CurrentNovel,
+  result: Awaited<ReturnType<typeof studioApi.getDocumentAnalysis>>
+): CurrentNovel {
+  const updatedNovel: CurrentNovel = {
+    ...currentNovel,
+    documentId: result.documentId,
+    analysisStatus: result.status,
+    message: result.message || currentNovel.message
+  };
+
+  if (result.status !== "completed") {
+    return updatedNovel;
+  }
+
+  return {
+    ...updatedNovel,
+    characters: result.characters,
+    locations: result.locations,
+    timeMarkers: result.timeMarkers,
+    events: result.events,
+    relationships: result.relationships,
+    conflicts: result.conflicts,
+    dialogues: result.dialogues,
+    actions: result.actions,
+    motivations: result.motivations,
+    causalLinks: result.causalLinks,
+    scenes: result.scenes
+  };
+}
+
+function mergeDocumentResult(
+  currentNovel: CurrentNovel,
+  result: Awaited<ReturnType<typeof studioApi.getDocument>>
+): CurrentNovel {
+  return {
+    ...currentNovel,
+    documentId: result.documentId,
+    filename: result.filename,
+    message: result.message || currentNovel.message,
+    sourceText: result.sourceText,
+    chapters: result.chapters,
+    characters: result.characters,
+    locations: result.locations,
+    timeMarkers: result.timeMarkers,
+    events: result.events,
+    relationships: result.relationships,
+    conflicts: result.conflicts,
+    dialogues: result.dialogues,
+    actions: result.actions,
+    motivations: result.motivations,
+    causalLinks: result.causalLinks,
+    scenes: result.scenes
+  };
+}

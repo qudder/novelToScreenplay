@@ -15,6 +15,10 @@ class DeepSeekConfigurationError(RuntimeError):
     pass
 
 
+class DeepSeekResponseParseError(RuntimeError):
+    pass
+
+
 class DeepSeekClient:
     async def extract_json(self, user_prompt: str, debug_context: str | None = None) -> dict[str, Any]:
         api_key = os.getenv("DEEPSEEK_API_KEY")
@@ -61,12 +65,58 @@ class DeepSeekClient:
         data = response.json()
         content = data["choices"][0]["message"]["content"]
         if not content:
-            raise RuntimeError("DeepSeek returned empty content.")
+            raise RuntimeError("DeepSeek 返回了空内容。")
 
-        parsed = json.loads(content)
+        try:
+            parsed = _parse_json_content(content)
+        except DeepSeekResponseParseError as error:
+            _write_debug_text(debug_dir, "parse_error.txt", repr(error))
+            _write_debug_text(debug_dir, "content_for_parse.txt", content)
+            logger.exception("DeepSeek JSON 解析失败：调试上下文=%s，错误=%s", debug_context, error)
+            raise
+
         _write_debug_json(debug_dir, "parsed_response.json", parsed)
         logger.info("DeepSeek 响应解析完成：调试上下文=%s，字段=%s", debug_context, list(parsed.keys()))
         return parsed
+
+
+def _parse_json_content(content: str) -> dict[str, Any]:
+    cleaned = _strip_code_fence(content.strip())
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as first_error:
+        extracted = _extract_json_object(cleaned)
+        if not extracted or extracted == cleaned:
+            raise DeepSeekResponseParseError(str(first_error)) from first_error
+
+        try:
+            parsed = json.loads(extracted)
+        except json.JSONDecodeError as second_error:
+            raise DeepSeekResponseParseError(str(second_error)) from second_error
+
+    if not isinstance(parsed, dict):
+        raise DeepSeekResponseParseError(f"期望 JSON object，实际得到 {type(parsed).__name__}。")
+    return parsed
+
+
+def _strip_code_fence(text: str) -> str:
+    if not text.startswith("```"):
+        return text
+
+    lines = text.splitlines()
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _extract_json_object(text: str) -> str:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return ""
+    return text[start : end + 1].strip()
 
 
 def _prepare_debug_dir(debug_context: str | None) -> Path:

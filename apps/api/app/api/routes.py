@@ -66,12 +66,28 @@ async def import_document(file: UploadFile = File(...)) -> ImportResult:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
+@router.get("/documents/{document_id}", response_model=ImportResult)
+def get_document(document_id: str) -> ImportResult:
+    result = workspace_service.get_import_result(document_id)
+    if not result:
+        logger.warning("查询文档失败：文档ID=%s", document_id)
+        raise HTTPException(status_code=404, detail="文档不存在。")
+    return result
+
+
+@router.put("/documents/{document_id}", response_model=ImportResult)
+def restore_document(document_id: str, payload: ImportResult) -> ImportResult:
+    if payload.document_id != document_id:
+        raise HTTPException(status_code=400, detail="文档 ID 与请求内容不一致。")
+    return workspace_service.restore_import_result(payload)
+
+
 @router.get("/documents/{document_id}/analysis", response_model=AnalysisResult)
 def get_document_analysis(document_id: str) -> AnalysisResult:
     analysis = workspace_service.get_analysis(document_id)
     if not analysis:
         logger.warning("查询叙事分析失败：文档不存在，文档ID=%s", document_id)
-        raise HTTPException(status_code=404, detail="Document not found.")
+        raise HTTPException(status_code=404, detail="文档不存在。")
     logger.info("查询叙事分析：文档ID=%s，状态=%s", document_id, analysis.status)
     return analysis
 
@@ -81,7 +97,7 @@ def start_document_analysis(document_id: str, background_tasks: BackgroundTasks)
     result = workspace_service.start_analysis(document_id)
     if not result:
         logger.warning("启动叙事分析失败：文档不存在，文档ID=%s", document_id)
-        raise HTTPException(status_code=404, detail="Document not found.")
+        raise HTTPException(status_code=404, detail="文档不存在。")
 
     if result.status == "running":
         logger.info("叙事分析后台任务已调度：文档ID=%s", document_id)

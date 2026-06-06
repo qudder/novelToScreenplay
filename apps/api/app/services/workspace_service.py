@@ -1,7 +1,7 @@
 from fastapi import UploadFile
 
 from app.domain.models import AnalysisResult, AnalysisStartResult, ImportResult, Workspace
-from app.repositories.document_store import document_store
+from app.repositories.document_store import DocumentRecord, document_store
 from app.repositories.memory_repository import memory_repository
 from app.services.chapter_analysis_service import analyze_chapters
 from app.services.document_parser import extract_text, split_into_chapters
@@ -25,7 +25,7 @@ class WorkspaceService:
             document_id=record.id,
             filename=file.filename or "untitled",
             status="parsed",
-            message=f"Parsed {len(chapters)} chapters. Narrative analysis is ready to start.",
+            message=f"已解析 {len(chapters)} 个章节，可以启动叙事分析。",
             chapters=chapters,
             source_text=source_text,
         )
@@ -33,6 +33,63 @@ class WorkspaceService:
     def get_analysis(self, document_id: str) -> AnalysisResult | None:
         record = document_store.get(document_id)
         return record.analysis if record else None
+
+    def get_import_result(self, document_id: str) -> ImportResult | None:
+        record = document_store.get(document_id)
+        if not record:
+            return None
+
+        return ImportResult(
+            document_id=record.id,
+            filename=record.filename,
+            status="parsed",
+            message=record.analysis.message,
+            chapters=record.chapters,
+            characters=record.analysis.characters,
+            locations=record.analysis.locations,
+            time_markers=record.analysis.time_markers,
+            events=record.analysis.events,
+            relationships=record.analysis.relationships,
+            conflicts=record.analysis.conflicts,
+            dialogues=record.analysis.dialogues,
+            actions=record.analysis.actions,
+            motivations=record.analysis.motivations,
+            causal_links=record.analysis.causal_links,
+            scenes=record.analysis.scenes,
+            chapter_analyses=record.analysis.chapter_analyses,
+            source_text=record.source_text,
+        )
+
+    def restore_import_result(self, payload: ImportResult) -> ImportResult:
+        record = DocumentRecord(
+            id=payload.document_id,
+            filename=payload.filename,
+            source_text=payload.source_text,
+            chapters=payload.chapters,
+        )
+        status = "completed" if _has_analysis_payload(payload) else "idle"
+        if payload.status == "queued":
+            status = "idle"
+        record.analysis = AnalysisResult(
+            document_id=payload.document_id,
+            status=status,
+            message=payload.message or "已从浏览器快照恢复。",
+            characters=payload.characters,
+            locations=payload.locations,
+            time_markers=payload.time_markers,
+            events=payload.events,
+            relationships=payload.relationships,
+            conflicts=payload.conflicts,
+            dialogues=payload.dialogues,
+            actions=payload.actions,
+            motivations=payload.motivations,
+            causal_links=payload.causal_links,
+            scenes=payload.scenes,
+            chapter_analyses=payload.chapter_analyses,
+        )
+        document_store.upsert(record)
+        logger.info("已从浏览器快照恢复文档：文档ID=%s，章节数=%s", record.id, len(record.chapters))
+        return self.get_import_result(record.id) or payload
 
     def start_analysis(self, document_id: str) -> AnalysisStartResult | None:
         record = document_store.get(document_id)
@@ -48,7 +105,8 @@ class WorkspaceService:
             )
 
         record.analysis.status = "running"
-        record.analysis.message = "Narrative analysis is running."
+        record.analysis.message = "叙事分析正在运行。"
+        document_store.save(record)
         logger.info("叙事分析状态已标记为运行中：文档ID=%s，章节数=%s", document_id, len(record.chapters))
         return AnalysisStartResult(
             document_id=document_id,
@@ -68,7 +126,7 @@ class WorkspaceService:
             record.analysis = AnalysisResult(
                 document_id=document_id,
                 status="completed",
-                message="Narrative analysis completed.",
+                message="叙事分析已完成。",
                 characters=analysis.characters,
                 locations=analysis.locations,
                 time_markers=analysis.time_markers,
@@ -82,6 +140,7 @@ class WorkspaceService:
                 scenes=analysis.scenes,
                 chapter_analyses=analysis.chapter_analyses,
             )
+            document_store.save(record)
             logger.info(
                 "叙事分析完成：文档ID=%s，角色数=%s，事件数=%s，关系数=%s，场景数=%s",
                 document_id,
@@ -96,7 +155,27 @@ class WorkspaceService:
                 status="failed",
                 message=str(error),
             )
+            document_store.save(record)
             logger.exception("叙事分析失败：文档ID=%s，错误=%s", document_id, error)
 
 
 workspace_service = WorkspaceService()
+
+
+def _has_analysis_payload(payload: ImportResult) -> bool:
+    return any(
+        [
+            payload.characters,
+            payload.locations,
+            payload.time_markers,
+            payload.events,
+            payload.relationships,
+            payload.conflicts,
+            payload.dialogues,
+            payload.actions,
+            payload.motivations,
+            payload.causal_links,
+            payload.scenes,
+            payload.chapter_analyses,
+        ]
+    )
