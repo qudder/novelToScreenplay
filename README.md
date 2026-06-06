@@ -47,6 +47,20 @@ DEEPSEEK_API_KEY=你的 DeepSeek API Key
 
 综合抽取 Prompt 配置在 `apps/api/app/config/chapter_analysis_prompt.md`。每个章节会按章节内容 hash 写入 `apps/api/app/.cache/deepseek`，同一章节内容不变时不会重复请求模型。
 
+模型调试文件会写入：
+
+```text
+apps/api/app/.debug/deepseek/
+```
+
+每章会保存 `system_prompt.md`、`user_prompt.md`、`request.json`、`raw_response.txt`、`parsed_response.json`，如果请求失败会额外保存 `error.txt`。该目录已被 `.gitignore` 忽略。
+
+章节分析会并发调用 DeepSeek，默认最多同时处理 3 个章节。配置见：
+
+```text
+apps/api/app/core/deepseek_config.py
+```
+
 ## 文档
 
 规划说明见 [docs/architecture-plan.md](docs/architecture-plan.md)。

@@ -17,6 +17,7 @@ export type ChapterDto = {
 };
 
 export type ImportDocumentResult = {
+  document_id: string;
   filename: string;
   status: "queued" | "parsed";
   message: string;
@@ -36,6 +37,8 @@ export type ImportDocumentResult = {
 };
 
 export type CurrentNovel = {
+  documentId?: string;
+  analysisStatus?: "idle" | "running" | "completed" | "failed";
   filename: string;
   message: string;
   sourceText: string;
@@ -52,6 +55,23 @@ export type CurrentNovel = {
   causalLinks: CausalLinkDto[];
   scenes: Scene[];
   importedAt: string;
+};
+
+export type AnalysisResultDto = {
+  document_id: string;
+  status: "idle" | "running" | "completed" | "failed";
+  message: string;
+  characters: CharacterDto[];
+  locations: LocationDto[];
+  time_markers: TimeMarkerDto[];
+  events: EventDto[];
+  relationships: RelationshipDto[];
+  conflicts: ConflictDto[];
+  dialogues: DialogueDto[];
+  actions: ActionDto[];
+  motivations: MotivationDto[];
+  causal_links: CausalLinkDto[];
+  scenes: SceneDto[];
 };
 
 export type Character = {

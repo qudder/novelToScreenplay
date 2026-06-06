@@ -1,7 +1,7 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from app.domain.models import ImportResult, Workspace
+from app.domain.models import AnalysisResult, AnalysisStartResult, ImportResult, Workspace
 from app.services.document_parser import UnsupportedDocumentError
 from app.services.deepseek_client import DeepSeekConfigurationError
 from app.services.settings_service import settings_service
@@ -52,6 +52,26 @@ async def import_document(file: UploadFile = File(...)) -> ImportResult:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except DeepSeekConfigurationError as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.get("/documents/{document_id}/analysis", response_model=AnalysisResult)
+def get_document_analysis(document_id: str) -> AnalysisResult:
+    analysis = workspace_service.get_analysis(document_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return analysis
+
+
+@router.post("/documents/{document_id}/analysis", response_model=AnalysisStartResult)
+def start_document_analysis(document_id: str, background_tasks: BackgroundTasks) -> AnalysisStartResult:
+    result = workspace_service.start_analysis(document_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if result.status == "running":
+        background_tasks.add_task(workspace_service.run_analysis, document_id)
+
+    return result
 
 
 @router.get("/settings/deepseek")

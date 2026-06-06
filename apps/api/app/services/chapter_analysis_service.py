@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 from pathlib import Path
@@ -68,24 +69,42 @@ class AggregatedAnalysis:
 
 async def analyze_chapters(chapters: list[Chapter], source_text: str) -> AggregatedAnalysis:
     deepseek_config.cache_dir.mkdir(parents=True, exist_ok=True)
-    analyses: list[ChapterAnalysis] = []
+    semaphore = asyncio.Semaphore(deepseek_config.max_concurrent_chapter_requests)
+    analyses = await asyncio.gather(
+        *[_analyze_single_chapter(chapter, source_text, semaphore) for chapter in chapters]
+    )
 
-    for chapter in chapters:
-        chapter_text = _chapter_text(chapter, source_text)
-        cache_path = _chapter_cache_path(chapter, chapter_text)
-
-        if cache_path.exists():
-            payload = json.loads(cache_path.read_text(encoding="utf-8"))
-        else:
-            payload = await deepseek_client.extract_json(_build_user_prompt(chapter, chapter_text))
-            cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        analyses.append(_parse_analysis(chapter.id, payload))
-
-    aggregated = AggregatedAnalysis(analyses)
+    aggregated = AggregatedAnalysis(list(analyses))
     _attach_character_ids(chapters, aggregated.characters)
     _attach_event_and_scene_ids(aggregated)
     return aggregated
+
+
+async def _analyze_single_chapter(
+    chapter: Chapter,
+    source_text: str,
+    semaphore: asyncio.Semaphore,
+) -> ChapterAnalysis:
+    chapter_text = _chapter_text(chapter, source_text)
+    cache_path = _chapter_cache_path(chapter, chapter_text)
+
+    if cache_path.exists():
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        return _parse_analysis(chapter.id, payload)
+
+    async with semaphore:
+        user_prompt = _build_user_prompt(chapter, chapter_text)
+        debug_dir = _chapter_debug_dir(chapter, chapter_text)
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        (debug_dir / "user_prompt.md").write_text(user_prompt, encoding="utf-8")
+        (debug_dir / "chapter_text.txt").write_text(chapter_text, encoding="utf-8")
+        payload = await deepseek_client.extract_json(
+            user_prompt,
+            debug_context=f"{chapter.id}-{_chapter_cache_key(chapter, chapter_text)[:12]}",
+        )
+        (debug_dir / "model_output.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return _parse_analysis(chapter.id, payload)
 
 
 def _chapter_cache_key(chapter: Chapter, chapter_text: str) -> str:
@@ -95,6 +114,10 @@ def _chapter_cache_key(chapter: Chapter, chapter_text: str) -> str:
 
 def _chapter_cache_path(chapter: Chapter, chapter_text: str) -> Path:
     return deepseek_config.cache_dir / f"{_chapter_cache_key(chapter, chapter_text)}.json"
+
+
+def _chapter_debug_dir(chapter: Chapter, chapter_text: str) -> Path:
+    return deepseek_config.debug_dir / f"{chapter.id}-{_chapter_cache_key(chapter, chapter_text)[:12]}"
 
 
 def _build_user_prompt(chapter: Chapter, chapter_text: str) -> str:
@@ -312,4 +335,3 @@ def _score(value: Any, default: int) -> int:
 
 def _has_name(item: dict[str, Any]) -> bool:
     return bool(_text(item.get("name")))
-

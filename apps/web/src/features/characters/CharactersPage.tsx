@@ -1,13 +1,13 @@
 import { Merge, SortDesc } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
-import { characters } from "../../shared/mockData";
+import { characters as mockCharacters } from "../../shared/mockData";
 import { useCurrentNovel } from "../../shared/currentNovel";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
 export function CharactersPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const currentNovel = useCurrentNovel();
-  const visibleCharacters = currentNovel?.characters?.length ? currentNovel.characters : characters;
+  const visibleCharacters = currentNovel ? currentNovel.characters : mockCharacters;
   const sortedCharacters = [...visibleCharacters].sort((a, b) => b.importance - a.importance);
 
   return (
@@ -20,7 +20,8 @@ export function CharactersPage() {
       <div className="toolbar animate-in">
         {currentNovel ? (
           <div className="current-novel-banner inline-banner">
-            当前小说：{currentNovel.filename} · {sortedCharacters.length} 个角色候选
+            当前小说：{currentNovel.filename} · 分析状态：{currentNovel.analysisStatus ?? "idle"} ·{" "}
+            {sortedCharacters.length} 个角色候选
           </div>
         ) : null}
         <button className="ghost-button" type="button">
@@ -32,26 +33,34 @@ export function CharactersPage() {
           按重要性排序
         </button>
       </div>
-      <div className="card-grid">
-        {sortedCharacters.map((character) => (
-          <article className="character-card animate-in" key={character.id}>
-            <div className="card-topline">
-              <strong>{character.name}</strong>
-              <span>{character.importance}</span>
-            </div>
-            <p>{character.description}</p>
-            <div className="tag-row">
-              <span>{character.role}</span>
-              {character.aliases.map((alias) => (
-                <span key={alias}>{alias}</span>
-              ))}
-            </div>
-            <small className="appearance-line">
-              出场章节：{character.appearances.length > 0 ? character.appearances.join("、") : "待抽取"}
-            </small>
-          </article>
-        ))}
-      </div>
+      {sortedCharacters.length > 0 ? (
+        <div className="card-grid">
+          {sortedCharacters.map((character) => (
+            <article className="character-card animate-in" key={character.id}>
+              <div className="card-topline">
+                <strong>{character.name}</strong>
+                <span>{character.importance}</span>
+              </div>
+              <p>{character.description}</p>
+              <div className="tag-row">
+                <span>{character.role}</span>
+                {character.aliases.map((alias) => (
+                  <span key={alias}>{alias}</span>
+                ))}
+              </div>
+              <small className="appearance-line">
+                出场章节：{character.appearances.length > 0 ? character.appearances.join("、") : "待分析"}
+              </small>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="panel animate-in empty-section">
+          <strong>等待叙事分析</strong>
+          <p>当前小说已经导入，但还没有角色分析结果。请在“小说导入”页启动叙事分析。</p>
+        </div>
+      )}
     </section>
   );
 }
+

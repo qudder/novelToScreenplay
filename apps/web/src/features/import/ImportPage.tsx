@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
-import { FileText, KeyRound, UploadCloud } from "lucide-react";
+import { FileText, KeyRound, PlayCircle, UploadCloud } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { chapters as mockChapters } from "../../shared/mockData";
 import { studioApi } from "../../shared/api";
@@ -10,6 +10,12 @@ import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 export function ImportPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const latestImportRef = useRef<{
+    filename: string;
+    sourceText: string;
+    chapters: Chapter[];
+    importedAt: string;
+  } | null>(null);
   const importedNovel = getCurrentNovel();
   const [chapters, setChapters] = useState<Chapter[]>(importedNovel?.chapters ?? mockChapters);
   const [selectedFilename, setSelectedFilename] = useState<string>(importedNovel?.filename ?? "示例文本");
@@ -18,6 +24,9 @@ export function ImportPage() {
   );
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [documentId, setDocumentId] = useState(importedNovel?.documentId ?? "");
+  const [analysisStatus, setAnalysisStatus] = useState(importedNovel?.analysisStatus ?? "idle");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [isKeyConfigured, setIsKeyConfigured] = useState(false);
   const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 DeepSeek 配置...");
@@ -67,10 +76,20 @@ export function ImportPage() {
 
     try {
       const result = await studioApi.importDocument(file);
+      setDocumentId(result.documentId);
+      setAnalysisStatus("idle");
       setChapters(result.chapters);
       setSelectedFilename(result.filename);
       setStatusMessage(result.message);
+      latestImportRef.current = {
+        filename: result.filename,
+        sourceText: result.sourceText,
+        chapters: result.chapters,
+        importedAt: new Date().toISOString()
+      };
       saveCurrentNovel({
+        documentId: result.documentId,
+        analysisStatus: "idle",
         filename: result.filename,
         message: result.message,
         sourceText: result.sourceText,
@@ -86,7 +105,7 @@ export function ImportPage() {
         motivations: result.motivations,
         causalLinks: result.causalLinks,
         scenes: result.scenes,
-        importedAt: new Date().toISOString()
+        importedAt: latestImportRef.current.importedAt
       });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "上传失败。");
@@ -95,6 +114,70 @@ export function ImportPage() {
       setIsUploading(false);
       event.target.value = "";
     }
+  }
+
+  async function handleStartAnalysis() {
+    if (!documentId) {
+      setErrorMessage("请先上传并完成分章。");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysisStatus("running");
+    setErrorMessage(null);
+    setStatusMessage("叙事分析已启动，章节结果可继续查看。");
+
+    try {
+      await studioApi.startDocumentAnalysis(documentId);
+      await pollAnalysis(documentId);
+    } catch (error) {
+      setAnalysisStatus("failed");
+      setErrorMessage(error instanceof Error ? error.message : "叙事分析失败。");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  async function pollAnalysis(targetDocumentId: string) {
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const result = await studioApi.getDocumentAnalysis(targetDocumentId);
+      setAnalysisStatus(result.status);
+      setStatusMessage(result.message);
+
+      if (result.status === "completed") {
+        const currentNovel = getCurrentNovel();
+        const latestImport = latestImportRef.current;
+        saveCurrentNovel({
+          documentId: targetDocumentId,
+          analysisStatus: "completed",
+          filename: latestImport?.filename ?? currentNovel?.filename ?? selectedFilename,
+          message: result.message,
+          sourceText: latestImport?.sourceText ?? currentNovel?.sourceText ?? "",
+          chapters: latestImport?.chapters ?? currentNovel?.chapters ?? chapters,
+          characters: result.characters,
+          locations: result.locations,
+          timeMarkers: result.timeMarkers,
+          events: result.events,
+          relationships: result.relationships,
+          conflicts: result.conflicts,
+          dialogues: result.dialogues,
+          actions: result.actions,
+          motivations: result.motivations,
+          causalLinks: result.causalLinks,
+          scenes: result.scenes,
+          importedAt: latestImport?.importedAt ?? currentNovel?.importedAt ?? new Date().toISOString()
+        });
+        return;
+      }
+
+      if (result.status === "failed") {
+        throw new Error(result.message || "叙事分析失败。");
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    }
+
+    throw new Error("叙事分析仍在运行，请稍后刷新状态。");
   }
 
   return (
@@ -147,8 +230,18 @@ export function ImportPage() {
             <div className="upload-status" aria-live="polite">
               <strong>{selectedFilename}</strong>
               <span>{statusMessage}</span>
+              {documentId ? <span>分析状态：{analysisStatus}</span> : null}
               {errorMessage ? <em>{errorMessage}</em> : null}
             </div>
+            <button
+              className="ghost-button analysis-button"
+              type="button"
+              disabled={!documentId || isAnalyzing}
+              onClick={handleStartAnalysis}
+            >
+              <PlayCircle size={16} />
+              {isAnalyzing ? "分析中..." : "开始叙事分析"}
+            </button>
           </div>
         </div>
         <div className="panel animate-in">
