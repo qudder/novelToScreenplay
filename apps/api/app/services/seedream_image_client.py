@@ -210,9 +210,11 @@ def _looks_like_image_url(value: str) -> bool:
 def _looks_like_base64_image(value: str) -> bool:
     if value.startswith("data:image/"):
         return True
-    if value.startswith(("http://", "https://", "/")):
+    if value.startswith(("http://", "https://")):
         return False
     compact = value.strip()
+    if compact.startswith(("/9j/", "iVBOR", "R0lG", "UklGR")):
+        return True
     return len(compact) > 128 and all(char.isalnum() or char in "+/=\r\n" for char in compact[:256])
 
 

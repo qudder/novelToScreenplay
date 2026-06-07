@@ -77,7 +77,7 @@ export function StoryboardImageManagementPage() {
             <div className="storyboard-image-list">
               {visibleTasks.map((task) => {
                 const imageUrl = getPreferredStoryboardImageUrl(task);
-                const isLocalImage = Boolean(getLocalGeneratedMediaUrl(task.localImagePath) || task.imageUrl?.startsWith("/media/generated"));
+                const isLocalImage = isLocalGeneratedMediaTask(task);
                 return (
                   <article className="video-management-card storyboard-image-card" key={task.id}>
                     <div className="storyboard-image-preview">
@@ -199,7 +199,7 @@ function statusText(status: StoryboardImageTask["status"]) {
 }
 
 function getPreferredStoryboardImageUrl(task: StoryboardImageTask) {
-  return getLocalGeneratedMediaUrl(task.localImagePath) || resolveApiAssetUrl(task.imageUrl ?? "");
+  return getLocalGeneratedMediaUrl(task.localImagePath) || getMediaLocalUrl(task.media) || resolveApiAssetUrl(task.imageUrl ?? "");
 }
 
 function getLocalGeneratedMediaUrl(localImagePath?: string) {
@@ -210,6 +210,21 @@ function getLocalGeneratedMediaUrl(localImagePath?: string) {
   if (markerIndex < 0) return "";
   const relativePath = normalizedPath.slice(markerIndex + marker.length);
   return resolveApiAssetUrl(`/media/generated/${relativePath}`);
+}
+
+function getMediaLocalUrl(media?: Record<string, unknown>) {
+  const localUrl = typeof media?.local_url === "string" ? media.local_url : "";
+  if (localUrl) return resolveApiAssetUrl(localUrl);
+  const localPath = typeof media?.local_path === "string" ? media.local_path : "";
+  return getLocalGeneratedMediaUrl(localPath);
+}
+
+function isLocalGeneratedMediaTask(task: StoryboardImageTask) {
+  return Boolean(
+    getLocalGeneratedMediaUrl(task.localImagePath) ||
+      getMediaLocalUrl(task.media) ||
+      task.imageUrl?.startsWith("/media/generated")
+  );
 }
 
 function resolveApiAssetUrl(url: string) {
