@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { BookOpen, Clapperboard, ExternalLink, Film, ImagePlus, Layers, RefreshCw, RotateCcw, Tags, Trash2, XCircle } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
-import { switchCurrentNovel } from "../../shared/currentNovel";
+import { switchCurrentNovelFromBackend } from "../../shared/currentNovel";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 import {
   deleteVideoTaskPermanently,
@@ -67,7 +67,7 @@ export function VideoManagementPage() {
 
   function handleOpenTag(task: VideoTask, tag: VideoTaskTag) {
     if (task.novel?.id) {
-      switchCurrentNovel(task.novel.id);
+      void switchCurrentNovelFromBackend(task.novel.id);
     }
     navigate(withReturnSource(tag.route, "video-management"));
   }

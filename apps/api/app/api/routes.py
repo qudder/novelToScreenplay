@@ -56,6 +56,17 @@ class ScreenplayExportPayload(BaseModel):
     updatedAt: str = ""
 
 
+class DocumentSummary(BaseModel):
+    document_id: str
+    filename: str
+    message: str
+    analysis_status: str
+    chapter_count: int
+    character_count: int
+    event_count: int
+    scene_count: int
+
+
 @router.get("/workspace", response_model=Workspace)
 def get_workspace() -> Workspace:
     return workspace_service.get_workspace()
@@ -84,6 +95,13 @@ def get_events():
 @router.get("/scenes")
 def get_scenes():
     return workspace_service.get_workspace().scenes
+
+
+@router.get("/documents", response_model=list[DocumentSummary])
+def list_documents() -> list[dict[str, Any]]:
+    documents = workspace_service.list_documents()
+    logger.info("查询本地文档列表：文档数=%s", len(documents))
+    return documents
 
 
 @router.post("/documents/import", response_model=ImportResult)

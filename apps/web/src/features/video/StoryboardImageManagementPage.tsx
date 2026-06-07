@@ -2,7 +2,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, BookOpen, Clapperboard, ExternalLink, Film, ImagePlus, Layers, RotateCcw, Tags, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "../../shared/PageHeader";
-import { switchCurrentNovel } from "../../shared/currentNovel";
+import { switchCurrentNovelFromBackend } from "../../shared/currentNovel";
 import {
   deleteStoryboardImageTaskPermanently,
   moveStoryboardImageTaskToTrash,
@@ -29,7 +29,7 @@ export function StoryboardImageManagementPage() {
 
   function handleOpenTag(task: StoryboardImageTask, tag: VideoTaskTag) {
     if (task.novel?.id) {
-      switchCurrentNovel(task.novel.id);
+      void switchCurrentNovelFromBackend(task.novel.id);
     }
     navigate(withReturnSource(tag.route, "storyboard-images"));
   }

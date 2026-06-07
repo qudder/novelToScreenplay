@@ -8,7 +8,7 @@ import {
   getCurrentNovel,
   removeNovelFromLibrary,
   saveCurrentNovel,
-  switchCurrentNovel,
+  switchCurrentNovelFromBackend,
   useCurrentNovel,
   useNovelLibrary
 } from "../../shared/currentNovel";
@@ -139,8 +139,8 @@ export function ImportPage() {
     }
   }
 
-  function handleSwitchNovel(targetDocumentId: string) {
-    const nextNovel = switchCurrentNovel(targetDocumentId);
+  async function handleSwitchNovel(targetDocumentId: string) {
+    const nextNovel = await switchCurrentNovelFromBackend(targetDocumentId);
     if (!nextNovel) {
       setErrorMessage("切换小说失败，本地缓存可能已损坏。");
       return;
