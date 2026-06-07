@@ -1,5 +1,5 @@
-import { Link, useNavigate } from "react-router-dom";
-import { BookOpen, Clapperboard, ExternalLink, Film, ImagePlus, Layers, RotateCcw, Tags, Trash2, XCircle } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowLeft, BookOpen, Clapperboard, ExternalLink, Film, ImagePlus, Layers, RotateCcw, Tags, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "../../shared/PageHeader";
 import { switchCurrentNovel } from "../../shared/currentNovel";
@@ -19,17 +19,19 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export function StoryboardImageManagementPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const tasks = useStoryboardImageTasks();
   const deletedTasks = useDeletedStoryboardImageTasks();
   const [viewMode, setViewMode] = useState<"active" | "completed" | "trash">("active");
   const completedTasks = tasks.filter((task) => task.status === "completed");
   const visibleTasks = viewMode === "completed" ? completedTasks : tasks;
+  const returnTarget = getReturnTarget(searchParams.get("from"));
 
   function handleOpenTag(task: StoryboardImageTask, tag: VideoTaskTag) {
     if (task.novel?.id) {
       switchCurrentNovel(task.novel.id);
     }
-    navigate(tag.route);
+    navigate(withReturnSource(tag.route, "storyboard-images"));
   }
 
   return (
@@ -39,6 +41,12 @@ export function StoryboardImageManagementPage() {
         title="分镜图片管理"
         description="管理由分镜生成的参考图片任务，并把分镜图片接入视频生成。"
       />
+      {returnTarget ? (
+        <button className="floating-return-button" type="button" onClick={() => navigate(returnTarget.path)}>
+          <ArrowLeft size={16} />
+          返回{returnTarget.label}
+        </button>
+      ) : null}
 
       <div className="video-management-summary animate-in">
         <button className={`metric-card metric-button${viewMode === "active" ? " active" : ""}`} type="button" onClick={() => setViewMode("active")}>
@@ -106,7 +114,7 @@ export function StoryboardImageManagementPage() {
                             {isLocalImage ? "打开本地图片" : "打开图片"}
                           </a>
                         ) : null}
-                        <button className="ghost-button" type="button" onClick={() => navigate("/video-generation")}>
+                        <button className="ghost-button" type="button" onClick={() => navigate("/video-generation?from=storyboard-images")}>
                           <Film size={16} />
                           用于视频生成
                         </button>
@@ -207,6 +215,18 @@ function getLocalGeneratedMediaUrl(localImagePath?: string) {
 function resolveApiAssetUrl(url: string) {
   if (!url || !url.startsWith("/")) return url;
   return `${API_BASE_URL}${url}`;
+}
+
+function withReturnSource(route: string, source: string) {
+  const separator = route.includes("?") ? "&" : "?";
+  return `${route}${separator}from=${source}`;
+}
+
+function getReturnTarget(from: string | null) {
+  const targets: Record<string, { path: string; label: string }> = {
+    "video-management": { path: "/video-management", label: "视频管理" }
+  };
+  return from ? targets[from] : undefined;
 }
 
 function formatDateTime(value: string) {

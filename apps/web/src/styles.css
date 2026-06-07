@@ -624,6 +624,34 @@ button.scene-card,
   background: #ffffff;
 }
 
+.character-card.linked {
+  border-color: #2f6f73;
+  box-shadow: 0 0 0 3px rgba(47, 111, 115, 0.14);
+}
+
+.floating-return-button {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid #2f6f73;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #173b3d;
+  font: inherit;
+  font-weight: 800;
+  box-shadow: 0 12px 28px rgba(23, 35, 37, 0.16);
+  cursor: pointer;
+}
+
+.floating-return-button:hover {
+  background: #edf6f5;
+}
+
 .card-topline span {
   display: grid;
   place-items: center;
@@ -715,6 +743,11 @@ button.scene-card,
   border: 3px solid #eef3f1;
   border-radius: 50%;
   background: #2f6f73;
+}
+
+.timeline .chapter-preview-button {
+  padding-right: 10px;
+  padding-left: 10px;
 }
 
 .draggable-card {
@@ -1014,6 +1047,15 @@ button.scene-card,
   background: #ffffff;
 }
 
+.video-scene-import-item.shot {
+  margin-left: 14px;
+}
+
+.video-scene-import-item.frame {
+  margin-left: 28px;
+  background: #fbfdfd;
+}
+
 .video-scene-import-item strong,
 .video-scene-import-item small {
   display: block;
@@ -1310,6 +1352,55 @@ button.scene-card,
   display: grid;
   gap: 10px;
   margin-top: 14px;
+}
+
+.selected-storyboard-reference {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #2f6f73;
+  border-radius: 8px;
+  background: #edf6f5;
+}
+
+.selected-storyboard-reference-list {
+  display: grid;
+  gap: 8px;
+}
+
+.selected-storyboard-reference-list .section-title {
+  justify-content: space-between;
+}
+
+.selected-storyboard-reference img,
+.selected-storyboard-reference > span {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background: #dfeceb;
+  color: #6a7d80;
+  font-size: 12px;
+  font-weight: 800;
+  object-fit: cover;
+}
+
+.selected-storyboard-reference strong,
+.selected-storyboard-reference small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-storyboard-reference small {
+  margin-top: 4px;
+  color: #6a7d80;
+  font-size: 12px;
 }
 
 .storyboard-shot-list {

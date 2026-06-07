@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { DndContext } from "@dnd-kit/core";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { events as mockEvents, scenes as mockScenes, chapters as mockChapters } from "../../shared/mockData";
 import { useCurrentNovel } from "../../shared/currentNovel";
@@ -13,7 +14,9 @@ export function ScenesPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const currentNovel = useCurrentNovel();
   const location = useLocation();
+  const navigate = useNavigate();
   const sceneBoardTarget = getSceneBoardTarget(location);
+  const returnTarget = getReturnTarget(location);
   const visibleEvents = currentNovel ? currentNovel.events : mockEvents;
   const visibleScenes = currentNovel ? currentNovel.scenes : mockScenes;
   const visibleBlocks = currentNovel?.narrativeBlocks ?? [];
@@ -85,6 +88,12 @@ export function ScenesPage() {
         title="场景拆分板"
         description="先按章节或连续章节形成总场景，再向下拆分子场景、事件、环境、时间和对话。点击卡片可打开原文比对。"
       />
+      {returnTarget ? (
+        <button className="floating-return-button" type="button" onClick={() => navigate(returnTarget.path)}>
+          <ArrowLeft size={16} />
+          返回{returnTarget.label}
+        </button>
+      ) : null}
       {currentNovel ? (
         <div className="current-novel-banner animate-in">
           当前小说：{currentNovel.filename} · 分析状态：{currentNovel.analysisStatus ?? "idle"}
@@ -215,6 +224,16 @@ function getSceneBoardTarget(location: ReturnType<typeof useLocation>) {
     blockId: state.blockId || params.get("blockId") || "",
     sceneId: state.sceneId || params.get("sceneId") || ""
   };
+}
+
+function getReturnTarget(location: ReturnType<typeof useLocation>) {
+  const params = new URLSearchParams(location.search);
+  const targets: Record<string, { path: string; label: string }> = {
+    "storyboard-images": { path: "/storyboard-images", label: "分镜管理" },
+    "video-management": { path: "/video-management", label: "视频管理" }
+  };
+  const from = params.get("from") ?? "";
+  return targets[from];
 }
 
 function resolveTargetBlockId(

@@ -30,7 +30,9 @@ export type VideoTask = {
   novel?: VideoTaskTag;
   chapter?: VideoTaskTag;
   scene?: VideoTaskTag;
+  shot?: VideoTaskTag;
   storyboardImage?: VideoTaskTag;
+  storyboardImages?: VideoTaskTag[];
   videoUrl?: string;
   originalVideoUrl?: string;
   localVideoPath?: string;

@@ -5,6 +5,7 @@ dist/
 .data/
 apps/api/.env
 apps/api/.cache/
+apps/api/.debug/
 apps/api/app/.cache/
 apps/api/app/.data/
 apps/api/app/.debug/

@@ -54,6 +54,7 @@ type SeedreamImageGenerationDto = {
   local_image_path?: string;
   b64_json: string;
   error_message: string;
+  media?: Record<string, unknown>;
   raw: Record<string, unknown>;
 };
 
@@ -102,6 +103,7 @@ function mapSeedreamImageGeneration(result: SeedreamImageGenerationDto) {
     imageUrl: resolveApiAssetUrl(result.image_url),
     originalImageUrl: result.original_image_url ?? result.image_url,
     localImagePath: result.local_image_path ?? "",
+    media: result.media ?? {},
     b64Json: result.b64_json,
     errorMessage: result.error_message
   } as const;
@@ -713,6 +715,7 @@ export const studioApi = {
     negativePrompt: string;
     screenplayText: string;
     referenceImageUrl?: string;
+    referenceImageUrls?: string[];
     referenceImageRole?: "reference" | "first_frame";
     ratio: string;
     duration: number;
@@ -732,6 +735,7 @@ export const studioApi = {
         negative_prompt: payload.negativePrompt,
         screenplay_text: payload.screenplayText,
         reference_image_url: payload.referenceImageUrl ?? "",
+        reference_image_urls: payload.referenceImageUrls ?? [],
         reference_image_role: payload.referenceImageRole ?? "first_frame",
         ratio: payload.ratio,
         duration: payload.duration,
@@ -767,6 +771,16 @@ export const studioApi = {
     negativePrompt: string;
     size: string;
     seed?: number;
+    documentId?: string;
+    filename?: string;
+    chapterId?: string;
+    chapterTitle?: string;
+    sceneId?: string;
+    sceneTitle?: string;
+    shotId?: string;
+    shotLabel?: string;
+    frameId?: string;
+    frameLabel?: string;
   }): Promise<ReturnType<typeof mapSeedreamImageGeneration>> {
     const response = await fetch(`${API_BASE_URL}/api/images/seedream/generations`, {
       method: "POST",
@@ -780,7 +794,17 @@ export const studioApi = {
         negative_prompt: payload.negativePrompt,
         size: payload.size,
         seed: payload.seed,
-        response_format: "b64_json"
+        response_format: "b64_json",
+        document_id: payload.documentId ?? "",
+        filename: payload.filename ?? "",
+        chapter_id: payload.chapterId ?? "",
+        chapter_title: payload.chapterTitle ?? "",
+        scene_id: payload.sceneId ?? "",
+        scene_title: payload.sceneTitle ?? "",
+        shot_id: payload.shotId ?? "",
+        shot_label: payload.shotLabel ?? "",
+        frame_id: payload.frameId ?? "",
+        frame_label: payload.frameLabel ?? ""
       })
     });
 
@@ -812,10 +836,8 @@ export const studioApi = {
         location: payload.scene.location,
         time_of_day: payload.scene.timeOfDay,
         characters: payload.scene.characters,
-        scene_content: payload.scene.content,
         shot: payload.shot,
-        frame: payload.frame,
-        dialogues: payload.scene.dialogues
+        frame: payload.frame
       })
     });
 
@@ -848,10 +870,8 @@ export const studioApi = {
         location: payload.scene.location,
         time_of_day: payload.scene.timeOfDay,
         characters: payload.scene.characters,
-        scene_content: payload.scene.content,
         shot: payload.shot,
-        frames: payload.frames,
-        dialogues: payload.scene.dialogues
+        frames: payload.frames
       })
     });
 

@@ -1,5 +1,6 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
-import { BookMarked, FileText, KeyRound, PlayCircle, Trash2, UploadCloud } from "lucide-react";
+import { ArrowLeft, BookMarked, FileText, KeyRound, PlayCircle, Trash2, UploadCloud } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import {
@@ -36,6 +37,8 @@ const emptyAnalysis = {
 export function ImportPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const importedNovel = useCurrentNovel();
   const novelLibrary = useNovelLibrary();
   const latestImportRef = useRef<Pick<CurrentNovel, "filename" | "sourceText" | "chapters" | "importedAt"> | null>(
@@ -69,6 +72,7 @@ export function ImportPage() {
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [comparePayload, setComparePayload] = useState<ComparePayload | null>(null);
   const activeNovelId = getActiveNovelId();
+  const returnTarget = getReturnTarget(searchParams.get("from"));
 
   function openChapterCompare(chapter: Chapter) {
     const sourceText = latestImportRef.current?.sourceText ?? importedNovel?.sourceText ?? "";
@@ -285,6 +289,12 @@ export function ImportPage() {
         title="小说导入"
         description="上传 TXT、Markdown 或 Docx 后，系统会先返回章节，再异步执行叙事分析。"
       />
+      {returnTarget ? (
+        <button className="floating-return-button" type="button" onClick={() => navigate(returnTarget.path)}>
+          <ArrowLeft size={16} />
+          返回{returnTarget.label}
+        </button>
+      ) : null}
       <div className="two-column">
         <div className="panel animate-in">
           <div className="settings-panel novel-library-panel">
@@ -415,4 +425,12 @@ export function ImportPage() {
       />
     </section>
   );
+}
+
+function getReturnTarget(from: string | null) {
+  const targets: Record<string, { path: string; label: string }> = {
+    "storyboard-images": { path: "/storyboard-images", label: "分镜管理" },
+    "video-management": { path: "/video-management", label: "视频管理" }
+  };
+  return from ? targets[from] : undefined;
 }

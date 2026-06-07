@@ -4,9 +4,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.core.storage_config import storage_config
+from app.core.storage_naming import document_dir_name, safe_slug
 from app.domain.models import AnalysisResult, Chapter
 
-DATA_DIR = Path(__file__).resolve().parents[1] / ".data" / "documents"
+DATA_DIR = storage_config.documents_dir
+LEGACY_DATA_DIR = Path(__file__).resolve().parents[1] / ".data" / "documents"
 
 
 @dataclass
@@ -51,9 +54,10 @@ class DocumentRecord:
 
 
 class DocumentStore:
-    def __init__(self, data_dir: Path = DATA_DIR) -> None:
+    def __init__(self, data_dir: Path = DATA_DIR, legacy_data_dir: Path = LEGACY_DATA_DIR) -> None:
         self._records: dict[str, DocumentRecord] = {}
         self._data_dir = data_dir
+        self._legacy_data_dir = legacy_data_dir
         self._data_dir.mkdir(parents=True, exist_ok=True)
 
     def create(self, filename: str, source_text: str, chapters: list[Chapter]) -> DocumentRecord:
@@ -79,6 +83,8 @@ class DocumentStore:
 
         record_path = self._record_path(document_id)
         if not record_path.exists():
+            record_path = self._legacy_record_path(document_id)
+        if not record_path.exists():
             return None
 
         record = DocumentRecord.from_dict(json.loads(record_path.read_text(encoding="utf-8")))
@@ -87,15 +93,24 @@ class DocumentStore:
         return record
 
     def save(self, record: DocumentRecord) -> None:
-        self._data_dir.mkdir(parents=True, exist_ok=True)
-        self._record_path(record.id).write_text(
+        record_path = self._record_path(record.id, record.filename)
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+        record_path.write_text(
             json.dumps(record.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
-    def _record_path(self, document_id: str) -> Path:
-        safe_id = "".join(char if char.isalnum() or char in "-_" else "-" for char in document_id)
-        return self._data_dir / f"{safe_id}.json"
+    def _record_path(self, document_id: str, filename: str | None = None) -> Path:
+        if filename:
+            return self._data_dir / document_dir_name(Path(filename).stem, document_id) / "snapshot.json"
+        matched_paths = list(self._data_dir.glob(f"*-{safe_slug(document_id, '未知文档', 36)}/snapshot.json"))
+        if matched_paths:
+            return matched_paths[0]
+        return self._data_dir / document_dir_name("未命名小说", document_id) / "snapshot.json"
+
+    def _legacy_record_path(self, document_id: str) -> Path:
+        safe_id = safe_slug(document_id, "未知文档", 80)
+        return self._legacy_data_dir / f"{safe_id}.json"
 
 
 def _model_to_dict(model: Any) -> dict[str, Any]:

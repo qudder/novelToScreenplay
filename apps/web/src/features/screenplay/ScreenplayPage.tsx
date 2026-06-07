@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Save, Sparkles } from "lucide-react";
+import { ArrowLeft, Bot, Save, Sparkles } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { useCurrentNovel } from "../../shared/currentNovel";
@@ -14,12 +15,15 @@ import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
 export function ScreenplayPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const currentNovel = useCurrentNovel();
   const [draft, setDraft] = useState<ScreenplayDraft | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState("");
   const [editorValue, setEditorValue] = useState("");
   const [statusMessage, setStatusMessage] = useState("请选择一个场景开始编写。");
   const [isCompleting, setIsCompleting] = useState(false);
+  const returnTarget = getReturnTarget(searchParams.get("from"));
 
   useEffect(() => {
     if (!currentNovel) return;
@@ -91,6 +95,12 @@ export function ScreenplayPage() {
         title="剧本生成"
         description="左侧选择场景，右侧编辑对应场景剧本。支持人工修改和自动补全，保存后可在剧本总览中导出。"
       />
+      {returnTarget ? (
+        <button className="floating-return-button" type="button" onClick={() => navigate(returnTarget.path)}>
+          <ArrowLeft size={16} />
+          返回{returnTarget.label}
+        </button>
+      ) : null}
 
       {!currentNovel ? (
         <div className="panel animate-in">
@@ -235,6 +245,14 @@ export function ScreenplayPage() {
       )}
     </section>
   );
+}
+
+function getReturnTarget(from: string | null) {
+  const targets: Record<string, { path: string; label: string }> = {
+    "storyboard-images": { path: "/storyboard-images", label: "分镜管理" },
+    "video-management": { path: "/video-management", label: "视频管理" }
+  };
+  return from ? targets[from] : undefined;
 }
 
 function groupScenesByBlock(scenes: ScreenplayDraft["scenes"]) {
