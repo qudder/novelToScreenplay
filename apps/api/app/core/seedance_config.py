@@ -4,8 +4,10 @@ from pathlib import Path
 
 class SeedanceConfig:
     def __init__(self) -> None:
-        self.debug_dir = Path(__file__).resolve().parents[1] / ".debug" / "seedance"
-        self.media_dir = Path(__file__).resolve().parents[1] / ".data" / "generated_media"
+        app_dir = Path(__file__).resolve().parents[1]
+        workspace_dir = Path(__file__).resolve().parents[4]
+        self.debug_dir = Path(os.getenv("SEEDANCE_DEBUG_DIR", app_dir / ".debug" / "seedance"))
+        self.media_dir = Path(os.getenv("GENERATED_MEDIA_DIR", workspace_dir / ".data" / "generated_media"))
 
     @property
     def base_url(self) -> str:

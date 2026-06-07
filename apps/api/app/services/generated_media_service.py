@@ -1,4 +1,5 @@
 import base64
+import binascii
 import hashlib
 import mimetypes
 from pathlib import Path
@@ -45,19 +46,32 @@ async def store_remote_media(url: str, media_kind: MediaKind, fallback_name: str
 
 
 def store_base64_image(b64_json: str, fallback_name: str) -> StoredMedia:
-    content = b64_json.strip()
+    content = _strip_base64_data_url(b64_json.strip())
     if not content:
         logger.warning("生成图片 Base64 保存跳过：标题=%s，原因=内容为空", fallback_name)
         return StoredMedia()
     try:
-        payload = base64.b64decode(content)
+        payload = base64.b64decode(content, validate=True)
+    except binascii.Error:
+        try:
+            payload = base64.b64decode(content)
+        except Exception as error:
+            logger.warning("生成图片 Base64 解码失败：标题=%s，错误=%s", fallback_name, error)
+            return StoredMedia()
     except Exception as error:
         logger.warning("生成图片 Base64 解码失败：标题=%s，错误=%s", fallback_name, error)
+        return StoredMedia()
+    if not _looks_like_image(payload):
+        logger.warning("生成图片 Base64 保存跳过：标题=%s，原因=解码内容不是可识别图片", fallback_name)
         return StoredMedia()
     return _write_media(payload, "images", fallback_name, ".png", "")
 
 
 def _write_media(content: bytes, media_kind: MediaKind, fallback_name: str, suffix: str, original_url: str) -> StoredMedia:
+    if media_kind == "images" and not _looks_like_image(content):
+        logger.warning("生成图片保存跳过：标题=%s，原因=下载内容不是可识别图片，来源=%s", fallback_name, _safe_url(original_url) if original_url else "Base64")
+        return StoredMedia(original_url=original_url)
+
     media_dir = seedance_config.media_dir / media_kind
     media_dir.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(content).hexdigest()[:16]
@@ -69,6 +83,28 @@ def _write_media(content: bytes, media_kind: MediaKind, fallback_name: str, suff
     local_url = f"{seedance_config.public_media_prefix}/{relative_path}"
     logger.info("生成媒体已保存到本地：类型=%s，本地路径=%s，访问地址=%s，来源=%s", media_kind, path, local_url, _safe_url(original_url) if original_url else "Base64")
     return StoredMedia(local_url=local_url, local_path=str(path), original_url=original_url)
+
+
+def _strip_base64_data_url(value: str) -> str:
+    if value.startswith("data:") and "," in value:
+        return value.split(",", 1)[1].strip()
+    return value
+
+
+def _looks_like_image(content: bytes) -> bool:
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return _png_dimensions(content) != (1, 1)
+    if content.startswith(b"\xff\xd8\xff") or content.startswith(b"GIF87a") or content.startswith(b"GIF89a"):
+        return True
+    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return True
+    return False
+
+
+def _png_dimensions(content: bytes) -> tuple[int, int] | None:
+    if len(content) < 24 or not content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    return (int.from_bytes(content[16:20], "big"), int.from_bytes(content[20:24], "big"))
 
 
 def _suffix_from_response(url: str, content_type: str) -> str:

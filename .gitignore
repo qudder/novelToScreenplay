@@ -2,6 +2,7 @@ node_modules/
 dist/
 .venv/
 .env
+.data/
 apps/api/.env
 apps/api/.cache/
 apps/api/app/.cache/

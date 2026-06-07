@@ -780,7 +780,7 @@ export const studioApi = {
         negative_prompt: payload.negativePrompt,
         size: payload.size,
         seed: payload.seed,
-        response_format: "url"
+        response_format: "b64_json"
       })
     });
 

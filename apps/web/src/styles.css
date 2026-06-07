@@ -1314,13 +1314,27 @@ button.scene-card,
 
 .storyboard-shot-list {
   display: grid;
-  grid-auto-columns: minmax(300px, 88%);
-  grid-auto-flow: column;
   gap: 12px;
   margin-top: 14px;
-  overflow-x: auto;
-  padding: 0 4px 10px 0;
-  scroll-snap-type: x mandatory;
+}
+
+.storyboard-shot-switcher {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.storyboard-shot-switcher .ghost-button:last-child {
+  justify-self: end;
+}
+
+.storyboard-shot-counter {
+  min-width: 92px;
+  color: #536467;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .storyboard-shot-card,
@@ -1340,7 +1354,6 @@ button.scene-card,
 .storyboard-shot-card {
   align-content: start;
   cursor: default;
-  scroll-snap-align: start;
 }
 
 .storyboard-shot-card.active,

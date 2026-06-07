@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ImagePlus, KeyRound, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImagePlus, KeyRound, Sparkles } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { useCurrentNovel } from "../../shared/currentNovel";
@@ -23,10 +23,14 @@ export function StoryboardImageGenerationPage() {
   const scenes = draft?.scenes ?? [];
   const [selectedSceneId, setSelectedSceneId] = useState(scenes[0]?.sceneId ?? "");
   const selectedScene = scenes.find((scene) => scene.sceneId === selectedSceneId) ?? scenes[0];
+  const storyboardShots = useMemo(() => buildStoryBoardShotsFromScreenplay(selectedScene), [selectedScene]);
   const [selectedShotId, setSelectedShotId] = useState("");
-  const selectedShot = selectedScene?.shotPlans.find((shot) => shot.id === selectedShotId) ?? selectedScene?.shotPlans[0];
-  const selectedShotIndex = selectedScene?.shotPlans.findIndex((shot) => shot.id === selectedShot?.id) ?? -1;
+  const selectedShot = storyboardShots.find((shot) => shot.id === selectedShotId) ?? storyboardShots[0];
+  const selectedShotIndex = storyboardShots.findIndex((shot) => shot.id === selectedShot?.id);
   const selectedShotNumber = selectedShotIndex >= 0 ? selectedShotIndex + 1 : 1;
+  const hasScreenplayShotMismatch = Boolean(
+    selectedScene && storyboardShots.some((shot) => shot.screenplayText) && selectedScene.shotPlans.length !== storyboardShots.length
+  );
   const [selectedFrameId, setSelectedFrameId] = useState("composition");
   const selectedFrame = selectedShot ? getShotFrames(selectedShot).find((frame) => frame.id === selectedFrameId) ?? getShotFrames(selectedShot)[0] : undefined;
   const [apiKey, setApiKey] = useState("");
@@ -56,10 +60,10 @@ export function StoryboardImageGenerationPage() {
 
   useEffect(() => {
     if (!selectedScene) return;
-    const nextShot = selectedScene.shotPlans[0];
+    const nextShot = storyboardShots[0];
     setSelectedShotId(nextShot?.id ?? "");
     setSelectedFrameId("composition");
-  }, [selectedScene?.sceneId]);
+  }, [selectedScene?.sceneId, storyboardShots]);
 
   useEffect(() => {
     if (promptTarget.type === "shot") {
@@ -153,7 +157,7 @@ export function StoryboardImageGenerationPage() {
       title,
       prompt,
       negativePrompt,
-      screenplayPreview: selectedScene.content.slice(0, 180),
+      screenplayPreview: getShotScreenplayText(selectedShot, selectedScene).slice(0, 180),
       novel: currentNovel.documentId ? { id: currentNovel.documentId, label: currentNovel.filename, route: "/import" } : undefined,
       scene: { id: selectedScene.sceneId, label: selectedScene.title, route: "/screenplay" },
       shot: {
@@ -236,6 +240,18 @@ export function StoryboardImageGenerationPage() {
     }
   }
 
+  function handleSwitchShot(direction: -1 | 1) {
+    if (!storyboardShots.length) return;
+    const currentIndex = selectedShotIndex >= 0 ? selectedShotIndex : 0;
+    const nextIndex = Math.min(Math.max(currentIndex + direction, 0), storyboardShots.length - 1);
+    const nextShot = storyboardShots[nextIndex];
+    if (!nextShot || nextShot.id === selectedShot?.id) return;
+    setSelectedShotId(nextShot.id);
+    setSelectedFrameId("composition");
+    setPromptTarget({ type: "shot" });
+    setExpandedShotId("");
+  }
+
   return (
     <section ref={ref} className="page">
       <PageHeader
@@ -267,78 +283,97 @@ export function StoryboardImageGenerationPage() {
               </select>
             </label>
             <div className="storyboard-shot-list">
-              {selectedScene?.shotPlans.length ? (
-                selectedScene.shotPlans.map((shot, shotIndex) => (
+              {hasScreenplayShotMismatch ? (
+                <div className="compact-card">
+                  <strong>镜头已按剧本正文重新对齐</strong>
+                  <p>剧本正文中识别到 {storyboardShots.length} 个分镜，原始分析分镜为 {selectedScene?.shotPlans.length ?? 0} 个；分镜生图将优先使用剧本正文的镜头分割。</p>
+                </div>
+              ) : null}
+              {storyboardShots.length && selectedShot ? (
+                <>
+                  <div className="storyboard-shot-switcher">
+                    <button className="ghost-button" type="button" disabled={selectedShotNumber <= 1} onClick={() => handleSwitchShot(-1)}>
+                      <ChevronLeft size={16} />
+                      上一镜头
+                    </button>
+                    <span className="storyboard-shot-counter">
+                      镜头 {selectedShotNumber} / {storyboardShots.length}
+                    </span>
+                    <button className="ghost-button" type="button" disabled={selectedShotNumber >= storyboardShots.length} onClick={() => handleSwitchShot(1)}>
+                      下一镜头
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
                   <article
-                    className={`storyboard-shot-card${shot.id === selectedShot?.id && promptTarget.type === "shot" ? " active" : ""}`}
-                    key={shot.id}
+                    className={`storyboard-shot-card${promptTarget.type === "shot" ? " active" : ""}`}
+                    key={selectedShot.id}
                   >
                     <button
                       className="storyboard-shot-info-card"
                       type="button"
                       onClick={() => {
-                        setSelectedShotId(shot.id);
+                        setSelectedShotId(selectedShot.id);
                         setPromptTarget({ type: "shot" });
-                        setExpandedShotId((current) => (current === shot.id ? "" : shot.id));
+                        setExpandedShotId((current) => (current === selectedShot.id ? "" : selectedShot.id));
                       }}
                     >
                       <div className="storyboard-shot-card-header">
-                        <strong>镜头{shotIndex + 1}</strong>
-                        <span>{shot.shotType || "景别待定"}</span>
+                        <strong>镜头{selectedShotNumber}</strong>
+                        <span>{selectedShot.shotType || "景别待定"}</span>
                       </div>
                       <dl className="storyboard-shot-breakdown">
                         <div>
                           <dt>景别</dt>
-                          <dd>{shot.shotType || "景别待定"}</dd>
+                          <dd>{selectedShot.shotType || "景别待定"}</dd>
                         </div>
                         <div>
                           <dt>视角</dt>
-                          <dd>{shot.viewpoint || "视角待定"}</dd>
+                          <dd>{selectedShot.viewpoint || "视角待定"}</dd>
                         </div>
                         <div>
                           <dt>构图</dt>
-                          <dd>{shot.composition || "构图待定"}</dd>
+                          <dd>{selectedShot.composition || "构图待定"}</dd>
                         </div>
                         <div>
                           <dt>运动</dt>
-                          <dd>{shot.cameraMovement || "镜头运动待定"}</dd>
+                          <dd>{selectedShot.cameraMovement || "镜头运动待定"}</dd>
                         </div>
                         <div>
                           <dt>焦点</dt>
-                          <dd>{shot.visualFocus || "视觉焦点待定"}</dd>
+                          <dd>{selectedShot.visualFocus || "视觉焦点待定"}</dd>
                         </div>
                         <div>
                           <dt>情绪</dt>
-                          <dd>{shot.emotionalPurpose || "情绪目的待定"}</dd>
+                          <dd>{selectedShot.emotionalPurpose || "情绪目的待定"}</dd>
                         </div>
                         <div>
                           <dt>转场</dt>
-                          <dd>{shot.transition || "转场待定"}</dd>
+                          <dd>{selectedShot.transition || "转场待定"}</dd>
                         </div>
                         <div>
                           <dt>场景</dt>
-                          <dd>{shot.sceneTitle || selectedScene?.title || "场景待定"}</dd>
+                          <dd>{selectedShot.sceneTitle || selectedScene?.title || "场景待定"}</dd>
                         </div>
                         <div>
                           <dt>事件</dt>
-                          <dd>{shot.eventTitle || "事件待定"}</dd>
+                          <dd>{selectedShot.eventTitle || "事件待定"}</dd>
                         </div>
                         <div>
                           <dt>章节</dt>
-                          <dd>{shot.chapterId || "章节待定"}</dd>
+                          <dd>{selectedShot.chapterId || "章节待定"}</dd>
                         </div>
                       </dl>
-                      <small>{expandedShotId === shot.id ? "收起上下文" : "展开对话与上下文"}</small>
+                      <small>{expandedShotId === selectedShot.id ? "收起上下文" : "展开对话与上下文"}</small>
                     </button>
-                    {expandedShotId === shot.id ? <ShotContextPanel scene={selectedScene} shot={shot} /> : null}
+                    {expandedShotId === selectedShot.id ? <ShotContextPanel scene={selectedScene} shot={selectedShot} /> : null}
                     <div className="storyboard-frame-list">
-                      {getShotFrames(shot).map((frame) => (
+                      {getShotFrames(selectedShot).map((frame) => (
                         <button
-                          className={`storyboard-frame-chip${shot.id === selectedShot?.id && frame.id === selectedFrame?.id && promptTarget.type === "frame" ? " active" : ""}`}
+                          className={`storyboard-frame-chip${frame.id === selectedFrame?.id && promptTarget.type === "frame" ? " active" : ""}`}
                           type="button"
                           key={frame.id}
                           onClick={() => {
-                            setSelectedShotId(shot.id);
+                            setSelectedShotId(selectedShot.id);
                             setSelectedFrameId(frame.id);
                             setPromptTarget({ type: "frame" });
                           }}
@@ -349,7 +384,7 @@ export function StoryboardImageGenerationPage() {
                       ))}
                     </div>
                   </article>
-                ))
+                </>
               ) : (
                 <article className="compact-card">
                   <strong>暂无分镜</strong>
@@ -466,7 +501,12 @@ type PromptTarget = {
   type: "shot" | "frame";
 };
 
-function ShotContextPanel({ scene, shot }: { scene?: SceneScreenplayDraft; shot: ShotPlan }) {
+type StoryboardShot = ShotPlan & {
+  screenplayText?: string;
+  screenplayShotNumber?: number;
+};
+
+function ShotContextPanel({ scene, shot }: { scene?: SceneScreenplayDraft; shot: StoryboardShot }) {
   const relatedDialogues = scene?.dialogues.filter((dialogue) => !shot.eventTitle || dialogue.event_title === shot.eventTitle) ?? [];
   const relatedEnvironments =
     scene?.environments.filter((environment) => !shot.eventTitle || environment.eventTitles.includes(shot.eventTitle) || environment.sceneTitle === shot.sceneTitle) ?? [];
@@ -507,13 +547,13 @@ function ShotContextPanel({ scene, shot }: { scene?: SceneScreenplayDraft; shot:
       </div>
       <div>
         <strong>剧本片段</strong>
-        <p>{scene?.content.slice(0, 260) || "暂无剧本片段"}</p>
+        <p>{getShotScreenplayText(shot, scene).slice(0, 260) || "暂无剧本片段"}</p>
       </div>
     </div>
   );
 }
 
-function getShotFrames(shot: ShotPlan): ShotFrame[] {
+function getShotFrames(shot: StoryboardShot): ShotFrame[] {
   return [
     {
       id: "composition",
@@ -548,11 +588,11 @@ function getShotFrames(shot: ShotPlan): ShotFrame[] {
   ];
 }
 
-function framePromptKeyFor(shot?: ShotPlan, frame?: ShotFrame) {
+function framePromptKeyFor(shot?: StoryboardShot, frame?: ShotFrame) {
   return shot && frame ? `${shot.id}:${frame.id}` : "";
 }
 
-function shotPromptKeyFor(shot?: ShotPlan) {
+function shotPromptKeyFor(shot?: StoryboardShot) {
   return shot ? `${shot.id}:shot` : "";
 }
 
@@ -561,7 +601,7 @@ function isValidSeedreamSize(size: string) {
   return Number.isFinite(width) && Number.isFinite(height) && width * height >= minimumSeedreamPixels;
 }
 
-function buildWholeShotFrame(shot: ShotPlan): ShotFrame {
+function buildWholeShotFrame(shot: StoryboardShot): ShotFrame {
   const shotDetails = [
     `景别：${shot.shotType || "景别待定"}`,
     `视角：${shot.viewpoint || "视角待定"}`,
@@ -582,15 +622,17 @@ function buildWholeShotFrame(shot: ShotPlan): ShotFrame {
   };
 }
 
-function buildShotStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: ShotPlan) {
+function buildShotStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: StoryboardShot) {
   if (!shot) return "";
   return buildFrameStoryboardPrompt(scene, shot, buildWholeShotFrame(shot));
 }
 
-function buildFrameStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: ShotPlan, frame?: ShotFrame) {
+function buildFrameStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: StoryboardShot, frame?: ShotFrame) {
   if (!scene || !shot || !frame) return "";
-  const shotIndex = scene.shotPlans.findIndex((item) => item.id === shot.id);
+  const storyboardShots = buildStoryBoardShotsFromScreenplay(scene);
+  const shotIndex = storyboardShots.findIndex((item) => item.id === shot.id);
   const shotNumber = shotIndex >= 0 ? shotIndex + 1 : 1;
+  const shotScreenplayText = getShotScreenplayText(shot, scene);
   return [
     `为影视分镜生成一张黑白粗略框架图。`,
     `画面风格：黑白线稿、分镜草图、低细节、只看布局，不要精致插画或电影剧照。`,
@@ -601,10 +643,104 @@ function buildFrameStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: ShotPla
     `地点与时间：${scene.location || "地点待定"}，${scene.timeOfDay || "时间待定"}`,
     `人物：${scene.characters.join("、") || "相关人物"}`,
     `镜头编号：镜头${shotNumber}`,
+    shotScreenplayText ? `当前镜头剧本片段：${shotScreenplayText.slice(0, 600)}` : "",
     `基础景别：${shot.shotType || "景别待定"}`,
     `必须介绍人物的相对位置、朝向、前后景关系和大概场景结构；人物可用简化轮廓或剪影表示。`,
     frame.id === "whole-shot" ? `需要把该镜头的完整数据整合为单张草图，不要遗漏关键站位、焦点和场景空间。` : `不要扩展到其他分镜点，不要同时表现完整镜头运动或完整转场过程。`,
     `不要绘制细腻五官、复杂服装纹理、彩色光影或成片级质感。`,
     `画面中不要出现对话、对白字幕、旁白文字、屏幕文字或任何可读文本。`
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildStoryBoardShotsFromScreenplay(scene?: SceneScreenplayDraft): StoryboardShot[] {
+  if (!scene) return [];
+  const screenplayShots = parseScreenplayShots(scene.content);
+  if (!screenplayShots.length) return scene.shotPlans;
+
+  return screenplayShots.map((screenplayShot, index) => {
+    const referenceShot = scene.shotPlans[index];
+    return {
+      ...(referenceShot ?? createEmptyShot(scene, index)),
+      id: referenceShot?.id ?? `screenplay-shot-${scene.sceneId}-${screenplayShot.number}`,
+      sequenceOrder: screenplayShot.number,
+      shotType: screenplayShot.shotType || referenceShot?.shotType || "",
+      viewpoint: screenplayShot.viewpoint || referenceShot?.viewpoint || "",
+      composition: screenplayShot.composition || referenceShot?.composition || "",
+      cameraMovement: screenplayShot.cameraMovement || referenceShot?.cameraMovement || "",
+      sceneTitle: referenceShot?.sceneTitle || scene.title,
+      screenplayText: screenplayShot.text,
+      screenplayShotNumber: screenplayShot.number
+    };
+  });
+}
+
+function parseScreenplayShots(content: string) {
+  const shotHeadingPattern = /(^|\n)(分镜\s*([0-9一二三四五六七八九十]+)\s*[｜|:：-]?\s*([^\n]*))/g;
+  const matches = Array.from(content.matchAll(shotHeadingPattern));
+  return matches.map((match, index) => {
+    const headingStart = (match.index ?? 0) + match[1].length;
+    const nextHeadingStart = index + 1 < matches.length ? matches[index + 1].index ?? content.length : content.length;
+    const heading = match[2].trim();
+    const fields = match[4]
+      .split(/[｜|]/)
+      .map((field) => field.trim())
+      .filter(Boolean);
+    return {
+      number: parseShotNumber(match[3]) || index + 1,
+      shotType: fields[0] ?? "",
+      viewpoint: fields[1] ?? "",
+      composition: fields[2] ?? "",
+      cameraMovement: fields[3] ?? "",
+      text: content.slice(headingStart, nextHeadingStart).trim() || heading
+    };
+  });
+}
+
+function parseShotNumber(value: string) {
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue)) return numericValue;
+  const chineseNumbers: Record<string, number> = {
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+    十: 10
+  };
+  if (value === "十") return 10;
+  if (value.startsWith("十")) return 10 + (chineseNumbers[value.slice(1)] ?? 0);
+  if (value.endsWith("十")) return (chineseNumbers[value.slice(0, -1)] ?? 1) * 10;
+  if (value.includes("十")) {
+    const [tens, ones] = value.split("十");
+    return (chineseNumbers[tens] ?? 1) * 10 + (chineseNumbers[ones] ?? 0);
+  }
+  return chineseNumbers[value] ?? 0;
+}
+
+function createEmptyShot(scene: SceneScreenplayDraft, index: number): StoryboardShot {
+  return {
+    id: `screenplay-shot-${scene.sceneId}-${index + 1}`,
+    chapterId: "",
+    sceneTitle: scene.title,
+    eventTitle: scene.eventTitles[index] ?? "",
+    sequenceOrder: index + 1,
+    shotType: "",
+    viewpoint: "",
+    composition: "",
+    cameraMovement: "",
+    visualFocus: "",
+    emotionalPurpose: "",
+    transition: "",
+    sourceRefs: []
+  };
+}
+
+function getShotScreenplayText(shot?: StoryboardShot, scene?: SceneScreenplayDraft) {
+  return shot?.screenplayText || scene?.content || "";
 }

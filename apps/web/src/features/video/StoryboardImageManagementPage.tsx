@@ -14,6 +14,8 @@ import {
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 import type { VideoTaskTag } from "../../shared/videoTasks";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+
 export function StoryboardImageManagementPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const navigate = useNavigate();
@@ -65,54 +67,58 @@ export function StoryboardImageManagementPage() {
 
           {visibleTasks.length ? (
             <div className="storyboard-image-list">
-              {visibleTasks.map((task) => (
-                <article className="video-management-card storyboard-image-card" key={task.id}>
-                  <div className="storyboard-image-preview">
-                    {task.imageUrl ? <img src={task.imageUrl} alt={task.title} loading="lazy" /> : <span>待生成图片</span>}
-                  </div>
-                  <div className="storyboard-image-card-body">
-                    <div className="video-management-header">
-                      <div>
-                        <span>{statusText(task.status)}</span>
-                        <h3>{task.title}</h3>
-                        <small>{task.model} · {formatDateTime(task.updatedAt)}</small>
+              {visibleTasks.map((task) => {
+                const imageUrl = getPreferredStoryboardImageUrl(task);
+                const isLocalImage = Boolean(getLocalGeneratedMediaUrl(task.localImagePath) || task.imageUrl?.startsWith("/media/generated"));
+                return (
+                  <article className="video-management-card storyboard-image-card" key={task.id}>
+                    <div className="storyboard-image-preview">
+                      {imageUrl ? <img src={imageUrl} alt={task.title} loading="lazy" /> : <span>待生成图片</span>}
+                    </div>
+                    <div className="storyboard-image-card-body">
+                      <div className="video-management-header">
+                        <div>
+                          <span>{statusText(task.status)}</span>
+                          <h3>{task.title}</h3>
+                          <small>{task.model} · {formatDateTime(task.updatedAt)}</small>
+                        </div>
+                      </div>
+                      <p>{task.prompt.slice(0, 180) || "暂无提示词"}</p>
+                      <div className="video-management-meta">
+                        <span>{task.localImagePath ? "已保存到本地目录" : "暂无本地文件"}</span>
+                        <span>{task.originalImageUrl ? "保留原始远端地址" : "无远端地址"}</span>
+                      </div>
+                      <div className="video-tag-row">
+                        {task.novel ? <TagButton icon="novel" label={`小说：${task.novel.label}`} onClick={() => handleOpenTag(task, task.novel!)} /> : null}
+                        {task.scene ? <TagButton icon="scene" label={`场景：${task.scene.label}`} onClick={() => handleOpenTag(task, task.scene!)} /> : null}
+                        {task.shot ? <TagButton icon="shot" label={`分镜：${task.shot.label}`} onClick={() => handleOpenTag(task, task.shot!)} /> : null}
+                        {!task.novel && !task.scene && !task.shot ? (
+                          <span className="video-static-tag">
+                            <Tags size={14} />
+                            未关联项目标签
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="toolbar">
+                        {imageUrl ? (
+                          <a className="ghost-button" href={imageUrl} target="_blank" rel="noreferrer">
+                            <ExternalLink size={16} />
+                            {isLocalImage ? "打开本地图片" : "打开图片"}
+                          </a>
+                        ) : null}
+                        <button className="ghost-button" type="button" onClick={() => navigate("/video-generation")}>
+                          <Film size={16} />
+                          用于视频生成
+                        </button>
+                        <button className="ghost-button danger" type="button" onClick={() => moveStoryboardImageTaskToTrash(task.id)}>
+                          <Trash2 size={16} />
+                          删除到回收箱
+                        </button>
                       </div>
                     </div>
-                    <p>{task.prompt.slice(0, 180) || "暂无提示词"}</p>
-                    <div className="video-management-meta">
-                      <span>{task.localImagePath ? "已保存到本地目录" : "暂无本地文件"}</span>
-                      <span>{task.originalImageUrl ? "保留原始远端地址" : "无远端地址"}</span>
-                    </div>
-                    <div className="video-tag-row">
-                      {task.novel ? <TagButton icon="novel" label={`小说：${task.novel.label}`} onClick={() => handleOpenTag(task, task.novel!)} /> : null}
-                      {task.scene ? <TagButton icon="scene" label={`场景：${task.scene.label}`} onClick={() => handleOpenTag(task, task.scene!)} /> : null}
-                      {task.shot ? <TagButton icon="shot" label={`分镜：${task.shot.label}`} onClick={() => handleOpenTag(task, task.shot!)} /> : null}
-                      {!task.novel && !task.scene && !task.shot ? (
-                        <span className="video-static-tag">
-                          <Tags size={14} />
-                          未关联项目标签
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="toolbar">
-                      {task.imageUrl ? (
-                        <a className="ghost-button" href={task.imageUrl} target="_blank" rel="noreferrer">
-                          <ExternalLink size={16} />
-                          打开图片
-                        </a>
-                      ) : null}
-                      <button className="ghost-button" type="button" onClick={() => navigate("/video-generation")}>
-                        <Film size={16} />
-                        用于视频生成
-                      </button>
-                      <button className="ghost-button danger" type="button" onClick={() => moveStoryboardImageTaskToTrash(task.id)}>
-                        <Trash2 size={16} />
-                        删除到回收箱
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <article className="compact-card">
@@ -182,6 +188,25 @@ function statusText(status: StoryboardImageTask["status"]) {
     failed: "失败"
   };
   return labels[status];
+}
+
+function getPreferredStoryboardImageUrl(task: StoryboardImageTask) {
+  return getLocalGeneratedMediaUrl(task.localImagePath) || resolveApiAssetUrl(task.imageUrl ?? "");
+}
+
+function getLocalGeneratedMediaUrl(localImagePath?: string) {
+  if (!localImagePath) return "";
+  const normalizedPath = localImagePath.replace(/\\/g, "/");
+  const marker = "/generated_media/";
+  const markerIndex = normalizedPath.lastIndexOf(marker);
+  if (markerIndex < 0) return "";
+  const relativePath = normalizedPath.slice(markerIndex + marker.length);
+  return resolveApiAssetUrl(`/media/generated/${relativePath}`);
+}
+
+function resolveApiAssetUrl(url: string) {
+  if (!url || !url.startsWith("/")) return url;
+  return `${API_BASE_URL}${url}`;
 }
 
 function formatDateTime(value: string) {

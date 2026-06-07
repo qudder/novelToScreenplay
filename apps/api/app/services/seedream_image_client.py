@@ -130,8 +130,8 @@ async def _store_image_if_ready(result: SeedreamImageGenerationResult, fallback_
 
 
 def _map_image_response(data: dict[str, Any]) -> SeedreamImageGenerationResult:
-    image_url = _find_first_string(data, {"url", "image_url", "imageUrl"})
-    b64_json = _find_first_string(data, {"b64_json", "b64Json", "base64"})
+    image_url = _find_image_url(data)
+    b64_json = _find_base64_image(data)
     error_message = _extract_error_from_payload(data)
 
     status: Literal["succeeded", "failed", "unknown"] = "succeeded" if image_url or b64_json else "unknown"
@@ -151,22 +151,48 @@ def _map_image_response(data: dict[str, Any]) -> SeedreamImageGenerationResult:
     )
 
 
-def _find_first_string(value: Any, keys: set[str]) -> str:
+def _find_image_url(data: dict[str, Any]) -> str:
+    return _find_first_string(data, {"url", "image_url", "imageUrl"}, _looks_like_image_url)
+
+
+def _find_base64_image(data: dict[str, Any]) -> str:
+    return _find_first_string(data, {"b64_json", "b64Json", "base64", "image"}, _looks_like_base64_image)
+
+
+def _find_first_string(value: Any, keys: set[str], predicate: Any | None = None) -> str:
     if isinstance(value, dict):
         for key in keys:
             found = value.get(key)
-            if isinstance(found, str) and found.strip():
+            if isinstance(found, str) and found.strip() and (predicate is None or predicate(found.strip())):
                 return found.strip()
+            if isinstance(found, list):
+                for item in found:
+                    if isinstance(item, str) and item.strip() and (predicate is None or predicate(item.strip())):
+                        return item.strip()
         for item in value.values():
-            found = _find_first_string(item, keys)
+            found = _find_first_string(item, keys, predicate)
             if found:
                 return found
     if isinstance(value, list):
         for item in value:
-            found = _find_first_string(item, keys)
+            found = _find_first_string(item, keys, predicate)
             if found:
                 return found
     return ""
+
+
+def _looks_like_image_url(value: str) -> bool:
+    lowered = value.lower()
+    return lowered.startswith(("http://", "https://")) or lowered.startswith("/")
+
+
+def _looks_like_base64_image(value: str) -> bool:
+    if value.startswith("data:image/"):
+        return True
+    if value.startswith(("http://", "https://", "/")):
+        return False
+    compact = value.strip()
+    return len(compact) > 128 and all(char.isalnum() or char in "+/=\r\n" for char in compact[:256])
 
 
 def _extract_error_from_payload(data: dict[str, Any]) -> str:
