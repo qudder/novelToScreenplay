@@ -27,15 +27,42 @@ import type { SceneScreenplayDraft, ScreenplayDraft } from "./screenplayDraft";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
+function resolveApiAssetUrl(url: string) {
+  if (!url || !url.startsWith("/")) return url;
+  return `${API_BASE_URL}${url}`;
+}
+
 type SeedanceTaskDto = {
   id: string;
   model: string;
   status: "queued" | "running" | "succeeded" | "failed" | "expired" | "cancelled" | "unknown";
   video_url: string;
+  original_video_url?: string;
+  local_video_path?: string;
   error_message: string;
   created_at?: number | null;
   updated_at?: number | null;
   raw: Record<string, unknown>;
+};
+
+type SeedreamImageGenerationDto = {
+  id: string;
+  model: string;
+  status: "succeeded" | "failed" | "unknown";
+  image_url: string;
+  original_image_url?: string;
+  local_image_path?: string;
+  b64_json: string;
+  error_message: string;
+  raw: Record<string, unknown>;
+};
+
+type ArkModelListDto = {
+  models: Array<{
+    id: string;
+    name: string;
+    owned_by: string;
+  }>;
 };
 
 function mapSeedanceStatus(status: SeedanceTaskDto["status"]): "queued" | "running" | "completed" | "failed" {
@@ -50,7 +77,9 @@ function mapSeedanceTask(task: SeedanceTaskDto) {
     providerTaskId: task.id,
     model: task.model,
     status: mapSeedanceStatus(task.status),
-    videoUrl: task.video_url,
+    videoUrl: resolveApiAssetUrl(task.video_url),
+    originalVideoUrl: task.original_video_url ?? task.video_url,
+    localVideoPath: task.local_video_path ?? "",
     errorMessage: task.error_message,
     rawStatus: task.status
   };
@@ -63,6 +92,19 @@ function mapSourceRef(dto: SourceRefDto): SourceRef {
     endChar: dto.end_char,
     evidence: dto.evidence
   };
+}
+
+function mapSeedreamImageGeneration(result: SeedreamImageGenerationDto) {
+  return {
+    providerTaskId: result.id,
+    model: result.model,
+    status: result.status === "succeeded" ? "completed" : result.status === "failed" ? "failed" : "running",
+    imageUrl: resolveApiAssetUrl(result.image_url),
+    originalImageUrl: result.original_image_url ?? result.image_url,
+    localImagePath: result.local_image_path ?? "",
+    b64Json: result.b64_json,
+    errorMessage: result.error_message
+  } as const;
 }
 
 function toSourceRefDto(ref: SourceRef): SourceRefDto {
@@ -653,11 +695,25 @@ export const studioApi = {
     return (await response.json()) as { configured: boolean };
   },
 
+  async getSeedanceModels(): Promise<ArkModelListDto["models"]> {
+    const response = await fetch(`${API_BASE_URL}/api/settings/seedance/models`);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "读取可用模型失败。");
+    }
+
+    const result = (await response.json()) as ArkModelListDto;
+    return result.models;
+  },
+
   async createSeedanceVideoTask(payload: {
     title: string;
+    model: string;
     prompt: string;
     negativePrompt: string;
     screenplayText: string;
+    referenceImageUrl?: string;
+    referenceImageRole?: "reference" | "first_frame";
     ratio: string;
     duration: number;
     resolution: string;
@@ -671,9 +727,12 @@ export const studioApi = {
       },
       body: JSON.stringify({
         title: payload.title,
+        model: payload.model,
         prompt: payload.prompt,
         negative_prompt: payload.negativePrompt,
         screenplay_text: payload.screenplayText,
+        reference_image_url: payload.referenceImageUrl ?? "",
+        reference_image_role: payload.referenceImageRole ?? "first_frame",
         ratio: payload.ratio,
         duration: payload.duration,
         resolution: payload.resolution,
@@ -699,6 +758,110 @@ export const studioApi = {
     }
 
     return mapSeedanceTask((await response.json()) as SeedanceTaskDto);
+  },
+
+  async createSeedreamImageGeneration(payload: {
+    title: string;
+    model: string;
+    prompt: string;
+    negativePrompt: string;
+    size: string;
+    seed?: number;
+  }): Promise<ReturnType<typeof mapSeedreamImageGeneration>> {
+    const response = await fetch(`${API_BASE_URL}/api/images/seedream/generations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        title: payload.title,
+        model: payload.model,
+        prompt: payload.prompt,
+        negative_prompt: payload.negativePrompt,
+        size: payload.size,
+        seed: payload.seed,
+        response_format: "url"
+      })
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "生成分镜图片失败。");
+    }
+
+    return mapSeedreamImageGeneration((await response.json()) as SeedreamImageGenerationDto);
+  },
+
+  async generateStoryboardFramePrompt(payload: {
+    documentId: string;
+    filename: string;
+    scene: SceneScreenplayDraft;
+    shot: unknown;
+    frame: unknown;
+  }): Promise<string> {
+    const response = await fetch(`${API_BASE_URL}/api/storyboard-prompts/frame`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        document_id: payload.documentId,
+        filename: payload.filename,
+        scene_id: payload.scene.sceneId,
+        scene_title: payload.scene.title,
+        location: payload.scene.location,
+        time_of_day: payload.scene.timeOfDay,
+        characters: payload.scene.characters,
+        scene_content: payload.scene.content,
+        shot: payload.shot,
+        frame: payload.frame,
+        dialogues: payload.scene.dialogues
+      })
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "生成小分镜提示词失败。");
+    }
+
+    const result = (await response.json()) as { prompt: string };
+    return result.prompt;
+  },
+
+  async generateStoryboardBatchPrompts(payload: {
+    documentId: string;
+    filename: string;
+    scene: SceneScreenplayDraft;
+    shot: unknown;
+    frames: unknown[];
+  }): Promise<Record<string, string>> {
+    const response = await fetch(`${API_BASE_URL}/api/storyboard-prompts/batch`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        document_id: payload.documentId,
+        filename: payload.filename,
+        scene_id: payload.scene.sceneId,
+        scene_title: payload.scene.title,
+        location: payload.scene.location,
+        time_of_day: payload.scene.timeOfDay,
+        characters: payload.scene.characters,
+        scene_content: payload.scene.content,
+        shot: payload.shot,
+        frames: payload.frames,
+        dialogues: payload.scene.dialogues
+      })
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "批量生成小分镜提示词失败。");
+    }
+
+    const result = (await response.json()) as { prompts: Record<string, string> };
+    return result.prompts;
   },
 
   async exportScreenplay(draft: ScreenplayDraft): Promise<string> {

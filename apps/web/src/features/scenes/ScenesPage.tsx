@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { DndContext } from "@dnd-kit/core";
+import { useLocation } from "react-router-dom";
 import { PageHeader } from "../../shared/PageHeader";
 import { events as mockEvents, scenes as mockScenes, chapters as mockChapters } from "../../shared/mockData";
 import { useCurrentNovel } from "../../shared/currentNovel";
@@ -11,6 +12,8 @@ import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 export function ScenesPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const currentNovel = useCurrentNovel();
+  const location = useLocation();
+  const sceneBoardTarget = getSceneBoardTarget(location);
   const visibleEvents = currentNovel ? currentNovel.events : mockEvents;
   const visibleScenes = currentNovel ? currentNovel.scenes : mockScenes;
   const visibleBlocks = currentNovel?.narrativeBlocks ?? [];
@@ -30,6 +33,13 @@ export function ScenesPage() {
       setSelectedBlockId(visibleBlocks[0].id);
     }
   }, [selectedBlockId, visibleBlocks]);
+
+  useEffect(() => {
+    const targetBlockId = resolveTargetBlockId(sceneBoardTarget, visibleBlocks, visibleSubScenes);
+    if (targetBlockId) {
+      setSelectedBlockId(targetBlockId);
+    }
+  }, [sceneBoardTarget.blockId, sceneBoardTarget.sceneId, visibleBlocks, visibleSubScenes]);
 
   function openEventCompare(event: Event) {
     setComparePayload({
@@ -91,7 +101,8 @@ export function ScenesPage() {
                     className={`compact-card clickable-card${block.id === selectedBlock?.id ? " active" : ""}`}
                     type="button"
                     key={block.id}
-                    onClick={() => openBlockCompare(block)}
+                    onClick={() => setSelectedBlockId(block.id)}
+                    onDoubleClick={() => openBlockCompare(block)}
                   >
                     <strong>{block.title}</strong>
                     <p>{block.summary || block.dramaticGoal || "暂无总场景摘要"}</p>
@@ -115,7 +126,12 @@ export function ScenesPage() {
             <div className="scene-columns">
               {blockSubScenes.length > 0 ? (
                 blockSubScenes.map((subScene) => (
-                  <button className="scene-card clickable-card" type="button" key={subScene.id} onClick={() => openSubSceneCompare(subScene)}>
+                  <button
+                    className={`scene-card clickable-card${subScene.id === sceneBoardTarget.sceneId ? " active" : ""}`}
+                    type="button"
+                    key={subScene.id}
+                    onClick={() => openSubSceneCompare(subScene)}
+                  >
                     <strong>{subScene.title}</strong>
                     <p>
                       {subScene.location || "地点待定"} · {subScene.timeText || subScene.timeOfDay || "时间待定"}
@@ -185,4 +201,32 @@ export function ScenesPage() {
       />
     </section>
   );
+}
+
+type SceneBoardLocationState = {
+  blockId?: string;
+  sceneId?: string;
+};
+
+function getSceneBoardTarget(location: ReturnType<typeof useLocation>) {
+  const state = (location.state ?? {}) as SceneBoardLocationState;
+  const params = new URLSearchParams(location.search);
+  return {
+    blockId: state.blockId || params.get("blockId") || "",
+    sceneId: state.sceneId || params.get("sceneId") || ""
+  };
+}
+
+function resolveTargetBlockId(
+  target: SceneBoardLocationState,
+  blocks: NarrativeBlock[],
+  subScenes: SubScene[]
+) {
+  if (target.blockId && blocks.some((block) => block.id === target.blockId)) {
+    return target.blockId;
+  }
+
+  if (!target.sceneId) return "";
+  const matchedSubScene = subScenes.find((subScene) => subScene.id === target.sceneId);
+  return matchedSubScene?.blockId && blocks.some((block) => block.id === matchedSubScene.blockId) ? matchedSubScene.blockId : "";
 }

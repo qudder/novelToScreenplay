@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.domain.models import AnalysisResult, AnalysisStartResult, ImportResult, Workspace
 from app.core.logging_config import get_logger
 from app.services.document_parser import UnsupportedDocumentError
+from app.services.ark_model_service import ArkModelConfigurationError, ArkModelListResult, ark_model_service
 from app.services.deepseek_client import DeepSeekConfigurationError
 from app.services.screenplay_generation_service import (
     ScreenplayCompletionRequest,
@@ -17,6 +18,20 @@ from app.services.seedance_client import (
     SeedanceCreateTaskRequest,
     SeedanceTaskResult,
     seedance_client,
+)
+from app.services.seedream_image_client import (
+    SeedreamImageConfigurationError,
+    SeedreamImageGenerationRequest,
+    SeedreamImageGenerationResult,
+    seedream_image_client,
+)
+from app.services.storyboard_prompt_service import (
+    StoryboardBatchPromptRequest,
+    StoryboardBatchPromptResult,
+    StoryboardFramePromptRequest,
+    StoryboardFramePromptResult,
+    generate_storyboard_batch_prompts,
+    generate_storyboard_frame_prompt,
 )
 from app.services.settings_service import settings_service
 from app.services.workspace_service import workspace_service
@@ -168,6 +183,19 @@ def save_seedance_settings(payload: SeedanceApiKeyPayload) -> dict[str, bool]:
     return {"configured": True}
 
 
+@router.get("/settings/seedance/models", response_model=ArkModelListResult)
+async def list_seedance_models() -> ArkModelListResult:
+    logger.info("收到 Seedance/Ark 可用模型查询请求")
+    try:
+        return await ark_model_service.list_models()
+    except ArkModelConfigurationError as error:
+        logger.warning("Seedance/Ark 可用模型查询失败：配置缺失")
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Seedance/Ark 可用模型查询失败：错误=%s", error)
+        raise HTTPException(status_code=502, detail=f"查询可用模型失败：{error}") from error
+
+
 @router.post("/videos/seedance/tasks", response_model=SeedanceTaskResult)
 async def create_seedance_video_task(payload: SeedanceCreateTaskRequest) -> SeedanceTaskResult:
     logger.info("收到 Seedance 视频任务创建请求：标题=%s，画幅=%s，时长=%s，清晰度=%s", payload.title, payload.ratio, payload.duration, payload.resolution)
@@ -192,6 +220,45 @@ async def get_seedance_video_task(task_id: str) -> SeedanceTaskResult:
     except Exception as error:
         logger.exception("Seedance 视频任务查询失败：任务ID=%s，错误=%s", task_id, error)
         raise HTTPException(status_code=502, detail=f"Seedance 视频任务查询失败：{error}") from error
+
+
+@router.post("/images/seedream/generations", response_model=SeedreamImageGenerationResult)
+async def create_seedream_image_generation(payload: SeedreamImageGenerationRequest) -> SeedreamImageGenerationResult:
+    logger.info("收到 Seedream 分镜图片生成请求：标题=%s，尺寸=%s", payload.title, payload.size)
+    try:
+        return await seedream_image_client.generate_image(payload)
+    except SeedreamImageConfigurationError as error:
+        logger.warning("Seedream 分镜图片生成失败：配置缺失，标题=%s", payload.title)
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Seedream 分镜图片生成失败：标题=%s，错误=%s", payload.title, error)
+        raise HTTPException(status_code=502, detail=f"Seedream 分镜图片生成失败：{error}") from error
+
+
+@router.post("/storyboard-prompts/frame", response_model=StoryboardFramePromptResult)
+async def create_storyboard_frame_prompt(payload: StoryboardFramePromptRequest) -> StoryboardFramePromptResult:
+    logger.info("收到小分镜图片提示词生成请求：场景ID=%s，标题=%s", payload.scene_id, payload.scene_title)
+    try:
+        return await generate_storyboard_frame_prompt(payload)
+    except DeepSeekConfigurationError as error:
+        logger.warning("小分镜图片提示词生成失败：DeepSeek 配置缺失，场景ID=%s", payload.scene_id)
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("小分镜图片提示词生成失败：场景ID=%s，错误=%s", payload.scene_id, error)
+        raise HTTPException(status_code=500, detail=f"小分镜图片提示词生成失败：{error}") from error
+
+
+@router.post("/storyboard-prompts/batch", response_model=StoryboardBatchPromptResult)
+async def create_storyboard_batch_prompts(payload: StoryboardBatchPromptRequest) -> StoryboardBatchPromptResult:
+    logger.info("收到批量小分镜图片提示词生成请求：场景ID=%s，数量=%s", payload.scene_id, len(payload.frames))
+    try:
+        return await generate_storyboard_batch_prompts(payload)
+    except DeepSeekConfigurationError as error:
+        logger.warning("批量小分镜图片提示词生成失败：DeepSeek 配置缺失，场景ID=%s", payload.scene_id)
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("批量小分镜图片提示词生成失败：场景ID=%s，错误=%s", payload.scene_id, error)
+        raise HTTPException(status_code=500, detail=f"批量小分镜图片提示词生成失败：{error}") from error
 
 
 @router.post("/screenplays/export")
