@@ -45,6 +45,16 @@ DEEPSEEK_API_KEY=你的 DeepSeek API Key
 
 也可以在前端“小说导入”页的 DeepSeek 配置面板中输入 API Key，后端会保存到本地 `apps/api/.env`。
 
+视频生成页会真实提交 Seedance 异步视频任务。请在本地 `apps/api/.env` 配置：
+
+```text
+SEEDANCE_API_KEY=你的 Seedance API Key
+SEEDANCE_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+SEEDANCE_MODEL=doubao-seedance-1-0-lite-t2v-250428
+```
+
+也可以在前端“视频生成”页保存 Seedance API Key。`SEEDANCE_BASE_URL` 和 `SEEDANCE_MODEL` 可按实际开通的火山方舟或 BytePlus 模型服务调整。
+
 综合抽取 Prompt 配置在 `apps/api/app/config/chapter_analysis_prompt.md`。每个章节会按章节内容 hash 写入 `apps/api/app/.cache/deepseek`，同一章节内容不变时不会重复请求模型。
 
 模型调试文件会写入：

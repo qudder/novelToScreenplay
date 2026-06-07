@@ -27,6 +27,35 @@ import type { SceneScreenplayDraft, ScreenplayDraft } from "./screenplayDraft";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
+type SeedanceTaskDto = {
+  id: string;
+  model: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "expired" | "cancelled" | "unknown";
+  video_url: string;
+  error_message: string;
+  created_at?: number | null;
+  updated_at?: number | null;
+  raw: Record<string, unknown>;
+};
+
+function mapSeedanceStatus(status: SeedanceTaskDto["status"]): "queued" | "running" | "completed" | "failed" {
+  if (status === "succeeded") return "completed";
+  if (status === "failed" || status === "expired" || status === "cancelled") return "failed";
+  if (status === "queued") return "queued";
+  return "running";
+}
+
+function mapSeedanceTask(task: SeedanceTaskDto) {
+  return {
+    providerTaskId: task.id,
+    model: task.model,
+    status: mapSeedanceStatus(task.status),
+    videoUrl: task.video_url,
+    errorMessage: task.error_message,
+    rawStatus: task.status
+  };
+}
+
 function mapSourceRef(dto: SourceRefDto): SourceRef {
   return {
     chapterId: dto.chapter_id,
@@ -622,6 +651,54 @@ export const studioApi = {
     }
 
     return (await response.json()) as { configured: boolean };
+  },
+
+  async createSeedanceVideoTask(payload: {
+    title: string;
+    prompt: string;
+    negativePrompt: string;
+    screenplayText: string;
+    ratio: string;
+    duration: number;
+    resolution: string;
+    seed?: number;
+    cameraFixed: boolean;
+  }): Promise<ReturnType<typeof mapSeedanceTask>> {
+    const response = await fetch(`${API_BASE_URL}/api/videos/seedance/tasks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        title: payload.title,
+        prompt: payload.prompt,
+        negative_prompt: payload.negativePrompt,
+        screenplay_text: payload.screenplayText,
+        ratio: payload.ratio,
+        duration: payload.duration,
+        resolution: payload.resolution,
+        seed: payload.seed,
+        camera_fixed: payload.cameraFixed
+      })
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "创建 Seedance 视频任务失败。");
+    }
+
+    return mapSeedanceTask((await response.json()) as SeedanceTaskDto);
+  },
+
+  async getSeedanceVideoTask(taskId: string): Promise<ReturnType<typeof mapSeedanceTask>> {
+    const response = await fetch(`${API_BASE_URL}/api/videos/seedance/tasks/${taskId}`);
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "查询 Seedance 视频任务失败。");
+    }
+
+    return mapSeedanceTask((await response.json()) as SeedanceTaskDto);
   },
 
   async exportScreenplay(draft: ScreenplayDraft): Promise<string> {
