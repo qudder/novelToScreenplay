@@ -1,8 +1,16 @@
 import { Link, useNavigate } from "react-router-dom";
-import { BookOpen, Clapperboard, Film, ImagePlus, Layers, Tags } from "lucide-react";
+import { BookOpen, Clapperboard, ExternalLink, Film, ImagePlus, Layers, RotateCcw, Tags, Trash2, XCircle } from "lucide-react";
+import { useState } from "react";
 import { PageHeader } from "../../shared/PageHeader";
 import { switchCurrentNovel } from "../../shared/currentNovel";
-import { type StoryboardImageTask, useStoryboardImageTasks } from "../../shared/storyboardImages";
+import {
+  deleteStoryboardImageTaskPermanently,
+  moveStoryboardImageTaskToTrash,
+  restoreStoryboardImageTask,
+  type StoryboardImageTask,
+  useDeletedStoryboardImageTasks,
+  useStoryboardImageTasks
+} from "../../shared/storyboardImages";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 import type { VideoTaskTag } from "../../shared/videoTasks";
 
@@ -10,6 +18,10 @@ export function StoryboardImageManagementPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const navigate = useNavigate();
   const tasks = useStoryboardImageTasks();
+  const deletedTasks = useDeletedStoryboardImageTasks();
+  const [viewMode, setViewMode] = useState<"active" | "completed" | "trash">("active");
+  const completedTasks = tasks.filter((task) => task.status === "completed");
+  const visibleTasks = viewMode === "completed" ? completedTasks : tasks;
 
   function handleOpenTag(task: StoryboardImageTask, tag: VideoTaskTag) {
     if (task.novel?.id) {
@@ -27,91 +39,143 @@ export function StoryboardImageManagementPage() {
       />
 
       <div className="video-management-summary animate-in">
-        <article className="metric-card">
+        <button className={`metric-card metric-button${viewMode === "active" ? " active" : ""}`} type="button" onClick={() => setViewMode("active")}>
           <span>图片任务</span>
           <strong>{tasks.length}</strong>
-        </article>
-        <article className="metric-card">
+        </button>
+        <button className={`metric-card metric-button${viewMode === "completed" ? " active" : ""}`} type="button" onClick={() => setViewMode("completed")}>
           <span>已完成</span>
-          <strong>{tasks.filter((task) => task.status === "completed").length}</strong>
-        </article>
-        <article className="metric-card">
-          <span>关联分镜</span>
-          <strong>{tasks.filter((task) => task.shot).length}</strong>
-        </article>
+          <strong>{completedTasks.length}</strong>
+        </button>
+        <button className={`metric-card metric-button${viewMode === "trash" ? " active" : ""}`} type="button" onClick={() => setViewMode("trash")}>
+          <span>回收箱</span>
+          <strong>{deletedTasks.length}</strong>
+        </button>
       </div>
 
-      <div className="panel animate-in">
-        <div className="section-title">
-          <h2>分镜图片任务</h2>
-          <Link className="ghost-button" to="/storyboard-image-generation">
-            <ImagePlus size={16} />
-            新建分镜图片
-          </Link>
-        </div>
-
-        {tasks.length ? (
-          <div className="storyboard-image-grid">
-            {tasks.map((task) => (
-              <article className="video-management-card storyboard-image-card" key={task.id}>
-                <div className="storyboard-image-preview">
-                  {task.imageUrl ? <img src={task.imageUrl} alt={task.title} /> : <span>待生成图片</span>}
-                </div>
-                <div className="video-management-header">
-                  <div>
-                    <span>{statusText(task.status)}</span>
-                    <h3>{task.title}</h3>
-                    <small>{task.model} · {formatDateTime(task.updatedAt)}</small>
-                  </div>
-                </div>
-                <p>{task.prompt.slice(0, 180) || "暂无提示词"}</p>
-                <div className="video-tag-row">
-                  {task.novel ? (
-                    <button className="video-link-tag" type="button" onClick={() => handleOpenTag(task, task.novel!)}>
-                      <BookOpen size={14} />
-                      小说：{task.novel.label}
-                    </button>
-                  ) : null}
-                  {task.scene ? (
-                    <button className="video-link-tag" type="button" onClick={() => handleOpenTag(task, task.scene!)}>
-                      <Clapperboard size={14} />
-                      场景：{task.scene.label}
-                    </button>
-                  ) : null}
-                  {task.shot ? (
-                    <button className="video-link-tag" type="button" onClick={() => handleOpenTag(task, task.shot!)}>
-                      <Layers size={14} />
-                      分镜：{task.shot.label}
-                    </button>
-                  ) : null}
-                  {!task.novel && !task.scene && !task.shot ? (
-                    <span className="video-static-tag">
-                      <Tags size={14} />
-                      未关联项目标签
-                    </span>
-                  ) : null}
-                </div>
-                <button className="ghost-button" type="button" onClick={() => navigate("/video-generation")}>
-                  <Film size={16} />
-                  用于视频生成
-                </button>
-              </article>
-            ))}
+      {viewMode !== "trash" ? (
+        <div className="panel animate-in">
+          <div className="section-title management-title">
+            <h2>{viewMode === "completed" ? "已完成分镜图片" : "分镜图片任务"}</h2>
+            <Link className="ghost-button" to="/storyboard-image-generation">
+              <ImagePlus size={16} />
+              新建分镜图片
+            </Link>
           </div>
-        ) : (
-          <article className="compact-card">
-            <strong>暂无分镜图片任务</strong>
-            <p>请先进入分镜生图页，选择场景分镜并保存图片任务。</p>
-          </article>
-        )}
-      </div>
+
+          {visibleTasks.length ? (
+            <div className="storyboard-image-list">
+              {visibleTasks.map((task) => (
+                <article className="video-management-card storyboard-image-card" key={task.id}>
+                  <div className="storyboard-image-preview">
+                    {task.imageUrl ? <img src={task.imageUrl} alt={task.title} loading="lazy" /> : <span>待生成图片</span>}
+                  </div>
+                  <div className="storyboard-image-card-body">
+                    <div className="video-management-header">
+                      <div>
+                        <span>{statusText(task.status)}</span>
+                        <h3>{task.title}</h3>
+                        <small>{task.model} · {formatDateTime(task.updatedAt)}</small>
+                      </div>
+                    </div>
+                    <p>{task.prompt.slice(0, 180) || "暂无提示词"}</p>
+                    <div className="video-management-meta">
+                      <span>{task.localImagePath ? "已保存到本地目录" : "暂无本地文件"}</span>
+                      <span>{task.originalImageUrl ? "保留原始远端地址" : "无远端地址"}</span>
+                    </div>
+                    <div className="video-tag-row">
+                      {task.novel ? <TagButton icon="novel" label={`小说：${task.novel.label}`} onClick={() => handleOpenTag(task, task.novel!)} /> : null}
+                      {task.scene ? <TagButton icon="scene" label={`场景：${task.scene.label}`} onClick={() => handleOpenTag(task, task.scene!)} /> : null}
+                      {task.shot ? <TagButton icon="shot" label={`分镜：${task.shot.label}`} onClick={() => handleOpenTag(task, task.shot!)} /> : null}
+                      {!task.novel && !task.scene && !task.shot ? (
+                        <span className="video-static-tag">
+                          <Tags size={14} />
+                          未关联项目标签
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="toolbar">
+                      {task.imageUrl ? (
+                        <a className="ghost-button" href={task.imageUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink size={16} />
+                          打开图片
+                        </a>
+                      ) : null}
+                      <button className="ghost-button" type="button" onClick={() => navigate("/video-generation")}>
+                        <Film size={16} />
+                        用于视频生成
+                      </button>
+                      <button className="ghost-button danger" type="button" onClick={() => moveStoryboardImageTaskToTrash(task.id)}>
+                        <Trash2 size={16} />
+                        删除到回收箱
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <article className="compact-card">
+              <strong>{viewMode === "completed" ? "暂无已完成分镜图片" : "暂无分镜图片任务"}</strong>
+              <p>{viewMode === "completed" ? "生成完成的分镜图片会显示在这里。" : "请先进入分镜生图页，选择场景分镜并保存图片任务。"}</p>
+            </article>
+          )}
+        </div>
+      ) : (
+        <div className="panel animate-in">
+          <div className="section-title">
+            <h2>回收箱</h2>
+            <small>逻辑删除后保留 7 天，到期自动清理</small>
+          </div>
+          {deletedTasks.length ? (
+            <div className="video-task-list">
+              {deletedTasks.map((task) => (
+                <article className="video-management-card deleted-card" key={task.id}>
+                  <div className="video-management-header">
+                    <div>
+                      <span>已删除</span>
+                      <h3>{task.title}</h3>
+                      <small>到期时间：{formatDateTime(task.expiresAt ?? "")}</small>
+                    </div>
+                  </div>
+                  <div className="toolbar">
+                    <button className="ghost-button" type="button" onClick={() => restoreStoryboardImageTask(task.id)}>
+                      <RotateCcw size={16} />
+                      恢复
+                    </button>
+                    <button className="ghost-button danger" type="button" onClick={() => deleteStoryboardImageTaskPermanently(task.id)}>
+                      <XCircle size={16} />
+                      彻底删除
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <article className="compact-card">
+              <strong>回收箱为空</strong>
+              <p>删除的分镜图片任务会先放入这里，并在过期后自动清理。</p>
+            </article>
+          )}
+        </div>
+      )}
     </section>
+  );
+}
+
+function TagButton({ icon, label, onClick }: { icon: "novel" | "scene" | "shot"; label: string; onClick: () => void }) {
+  const Icon = icon === "novel" ? BookOpen : icon === "scene" ? Clapperboard : Layers;
+  return (
+    <button className="video-link-tag" type="button" onClick={onClick}>
+      <Icon size={14} />
+      {label}
+    </button>
   );
 }
 
 function statusText(status: StoryboardImageTask["status"]) {
   const labels: Record<StoryboardImageTask["status"], string> = {
-    draft: "草案",
+    draft: "草稿",
     queued: "排队中",
     running: "生成中",
     completed: "已完成",

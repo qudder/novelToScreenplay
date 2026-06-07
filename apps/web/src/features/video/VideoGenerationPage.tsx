@@ -4,7 +4,7 @@ import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { getActiveNovelId, switchCurrentNovel, useCurrentNovel, useNovelLibrary } from "../../shared/currentNovel";
 import { getScreenplayDraft, type SceneScreenplayDraft } from "../../shared/screenplayDraft";
-import { useStoryboardImageTasks } from "../../shared/storyboardImages";
+import { type StoryboardImageTask, useStoryboardImageTasks } from "../../shared/storyboardImages";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 import { saveVideoTask, type VideoTaskTag } from "../../shared/videoTasks";
 
@@ -19,6 +19,11 @@ type MediaAsset = {
 const ratioOptions = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const durationOptions = ["5", "10"];
 const resolutionOptions = ["720p", "1080p"];
+const videoModelOptions = [
+  "doubao-seedance-1-0-lite-t2v-250428",
+  "doubao-seedance-1-0-pro-250528",
+  "doubao-seedance-1-0-lite-i2v-250428"
+];
 
 export function VideoGenerationPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
@@ -42,6 +47,9 @@ export function VideoGenerationPage() {
   const [screenplayText, setScreenplayText] = useState(() => buildScreenplayText(draft));
   const [prompt, setPrompt] = useState("根据剧本生成电影感镜头，保持人物行动、场景氛围和视角转换一致。");
   const [negativePrompt, setNegativePrompt] = useState("低清晰度、字幕、水印、画面畸变、人物多手指、脸部崩坏");
+  const [model, setModel] = useState(videoModelOptions[0]);
+  const [availableModels, setAvailableModels] = useState(videoModelOptions);
+  const [customModel, setCustomModel] = useState("");
   const [ratio, setRatio] = useState("16:9");
   const [duration, setDuration] = useState("5");
   const [resolution, setResolution] = useState("1080p");
@@ -52,6 +60,7 @@ export function VideoGenerationPage() {
   const [selectedSceneTag, setSelectedSceneTag] = useState<VideoTaskTag | undefined>(undefined);
   const [selectedChapterTag, setSelectedChapterTag] = useState<VideoTaskTag | undefined>(undefined);
   const [selectedStoryboardImageTag, setSelectedStoryboardImageTag] = useState<VideoTaskTag | undefined>(undefined);
+  const [selectedStoryboardImageTask, setSelectedStoryboardImageTask] = useState<StoryboardImageTask | undefined>(undefined);
 
   useEffect(() => {
     setScreenplayText(buildScreenplayText(draft));
@@ -63,6 +72,9 @@ export function VideoGenerationPage() {
       .then((settings) => {
         setIsKeyConfigured(settings.configured);
         setKeyStatusMessage(settings.configured ? "Seedance API Key 已配置。" : "Seedance API Key 尚未配置。");
+        if (settings.configured) {
+          refreshModelOptions("video");
+        }
       })
       .catch(() => {
         setKeyStatusMessage("无法读取 Seedance 配置状态。");
@@ -90,10 +102,26 @@ export function VideoGenerationPage() {
       setIsKeyConfigured(result.configured);
       setApiKey("");
       setKeyStatusMessage("Seedance API Key 已保存到本地后端。");
+      await refreshModelOptions("video");
     } catch (error) {
       setKeyStatusMessage(error instanceof Error ? error.message : "保存失败。");
     } finally {
       setIsSavingKey(false);
+    }
+  }
+
+  async function refreshModelOptions(kind: "video" | "image") {
+    try {
+      const models = await studioApi.getSeedanceModels();
+      const keyword = kind === "video" ? "seedance" : "seedream";
+      const matchedModels = models.map((item) => item.id).filter((id) => id.toLowerCase().includes(keyword));
+      const nextModels = matchedModels.length ? matchedModels : models.map((item) => item.id);
+      if (!nextModels.length) return;
+      setAvailableModels(nextModels);
+      setModel((current) => (nextModels.includes(current) ? current : nextModels[0]));
+      setKeyStatusMessage(`已读取可用模型：${nextModels.length} 个。`);
+    } catch (error) {
+      setKeyStatusMessage(error instanceof Error ? error.message : "读取可用模型失败，可使用自定义模型。");
     }
   }
 
@@ -148,6 +176,7 @@ export function VideoGenerationPage() {
       setSelectedSceneTag(undefined);
       setSelectedChapterTag(undefined);
       setSelectedStoryboardImageTag(undefined);
+      setSelectedStoryboardImageTask(undefined);
       setStatusMessage(`已切换到《${novel.filename}》，可导入该小说的章节剧本。`);
       return;
     }
@@ -188,16 +217,25 @@ export function VideoGenerationPage() {
       setStatusMessage("Seed 必须是非负整数，留空则由 Seedance 随机生成。");
       return;
     }
+    if (selectedStoryboardImageTag && !selectedStoryboardImageTask?.imageUrl) {
+      setStatusMessage("已选择分镜图片任务，但该任务还没有可用图片 URL，暂不能作为首帧提交。");
+      return;
+    }
     const now = new Date().toISOString();
     const taskTitle = selectedSceneTag?.label || currentNovel?.filename || "未命名视频任务";
+    const selectedModel = customModel.trim() || model;
     setIsCreatingTask(true);
     setStatusMessage("正在提交 Seedance 视频生成任务...");
     try {
+      const referenceImageUrl = selectedStoryboardImageTask?.originalImageUrl || selectedStoryboardImageTask?.imageUrl;
       const result = await studioApi.createSeedanceVideoTask({
         title: taskTitle,
+        model: selectedModel,
         prompt,
         negativePrompt,
         screenplayText,
+        referenceImageUrl,
+        referenceImageRole: referenceImageUrl ? "first_frame" : undefined,
         ratio,
         duration: Number(duration),
         resolution,
@@ -209,7 +247,7 @@ export function VideoGenerationPage() {
         providerTaskId: result.providerTaskId,
         title: taskTitle,
         status: result.status,
-        model: result.model || "Seedance",
+        model: result.model || selectedModel,
         ratio,
         duration,
         resolution,
@@ -225,10 +263,12 @@ export function VideoGenerationPage() {
         novel: currentNovel?.documentId
           ? { id: currentNovel.documentId, label: currentNovel.filename, route: "/import" }
           : undefined,
-      chapter: selectedChapterTag,
-      scene: selectedSceneTag,
-      storyboardImage: selectedStoryboardImageTag,
-      videoUrl: result.videoUrl,
+        chapter: selectedChapterTag,
+        scene: selectedSceneTag,
+        storyboardImage: selectedStoryboardImageTag,
+        videoUrl: result.videoUrl,
+        originalVideoUrl: result.originalVideoUrl,
+        localVideoPath: result.localVideoPath,
         errorMessage: result.errorMessage,
         createdAt: now,
         updatedAt: new Date().toISOString()
@@ -355,9 +395,10 @@ export function VideoGenerationPage() {
           <StoryboardImageSource
             tasks={relatedStoryboardImages}
             selectedTag={selectedStoryboardImageTag}
-            onSelect={(tag) => {
+            onSelect={(tag, task) => {
               setSelectedStoryboardImageTag(tag);
-              setStatusMessage(`已选择分镜图片参考：${tag.label}`);
+              setSelectedStoryboardImageTask(task);
+              setStatusMessage(task.imageUrl ? `已选择分镜图片首帧：${tag.label}` : `已选择分镜图片任务：${tag.label}，但该任务暂无图片 URL。`);
             }}
           />
           <AssetSection title="视频参考" assets={videoAssets} onRemove={handleRemoveAsset} />
@@ -384,6 +425,11 @@ export function VideoGenerationPage() {
           <small className={isKeyConfigured ? "status-ok" : "status-warn"}>{keyStatusMessage}</small>
 
           <div className="video-setting-grid">
+            <SelectField label="模型" value={model} options={availableModels} onChange={setModel} />
+            <label className="field-label">
+              自定义模型
+              <input className="text-input" value={customModel} placeholder="留空则使用上方模型" onChange={(event) => setCustomModel(event.target.value)} />
+            </label>
             <SelectField label="画幅" value={ratio} options={ratioOptions} onChange={setRatio} />
             <SelectField label="时长" value={duration} options={durationOptions} suffix="秒" onChange={setDuration} />
             <SelectField label="清晰度" value={resolution} options={resolutionOptions} onChange={setResolution} />
@@ -400,7 +446,7 @@ export function VideoGenerationPage() {
 
           <div className="video-task-card">
             <strong>任务草案</strong>
-            <p>模型：Seedance</p>
+            <p>模型：{customModel.trim() || model}</p>
             <p>
               {resolution} · {ratio} · {duration} 秒
             </p>
@@ -488,7 +534,7 @@ function StoryboardImageSource({
 }: {
   tasks: ReturnType<typeof useStoryboardImageTasks>;
   selectedTag?: VideoTaskTag;
-  onSelect: (tag: VideoTaskTag) => void;
+  onSelect: (tag: VideoTaskTag, task: StoryboardImageTask) => void;
 }) {
   return (
     <div className="asset-section">
@@ -505,11 +551,11 @@ function StoryboardImageSource({
                 className={`storyboard-reference-card${selectedTag?.id === task.id ? " active" : ""}`}
                 type="button"
                 key={task.id}
-                onClick={() => onSelect(tag)}
+                onClick={() => onSelect(tag, task)}
               >
                 {task.imageUrl ? <img src={task.imageUrl} alt={task.title} /> : <span>待生成</span>}
                 <strong>{task.title}</strong>
-                <small>{task.shot?.label || "未关联分镜"}</small>
+                <small>{task.imageUrl ? "可作为首帧" : "暂无图片 URL"} · {task.shot?.label || "未关联分镜"}</small>
               </button>
             );
           })}

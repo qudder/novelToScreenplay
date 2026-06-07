@@ -1,0 +1,221 @@
+import json
+import os
+from pathlib import Path
+from typing import Any, Literal
+
+import httpx
+from pydantic import BaseModel, Field
+
+from app.core.logging_config import get_logger
+from app.core.seedance_config import seedance_config
+from app.services.generated_media_service import store_base64_image, store_remote_media
+
+logger = get_logger("services.seedream_image")
+
+
+class SeedreamImageConfigurationError(RuntimeError):
+    pass
+
+
+class SeedreamImageGenerationRequest(BaseModel):
+    title: str = ""
+    model: str = ""
+    prompt: str = Field(min_length=1)
+    negative_prompt: str = ""
+    size: str = "1920x1920"
+    response_format: Literal["url", "b64_json"] = "url"
+    seed: int | None = None
+
+
+class SeedreamImageGenerationResult(BaseModel):
+    id: str = ""
+    model: str = ""
+    status: Literal["succeeded", "failed", "unknown"] = "unknown"
+    image_url: str = ""
+    original_image_url: str = ""
+    local_image_path: str = ""
+    b64_json: str = ""
+    error_message: str = ""
+    raw: dict[str, Any] = {}
+
+
+class SeedreamImageClient:
+    async def generate_image(self, request: SeedreamImageGenerationRequest) -> SeedreamImageGenerationResult:
+        api_key = self._get_api_key()
+        payload = self._build_payload(request)
+        debug_dir = _prepare_debug_dir("generate-image")
+        _write_debug_json(debug_dir, "request.json", _redact_payload(payload))
+        logger.info(
+            "准备提交 Seedream 分镜图片生成：模型=%s，标题=%s，尺寸=%s",
+            _request_model(request),
+            request.title or "未命名分镜图片",
+            request.size,
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=seedance_config.timeout_seconds) as client:
+                response = await client.post(
+                    f"{seedance_config.base_url}/images/generations",
+                    headers=self._headers(api_key),
+                    json=payload,
+                )
+                _write_debug_text(debug_dir, "raw_response.txt", response.text)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            _write_debug_text(debug_dir, "error.txt", error.response.text)
+            logger.exception("Seedream 分镜图片生成失败：状态码=%s，标题=%s", error.response.status_code, request.title or "未命名分镜图片")
+            raise RuntimeError(_extract_error_message(error.response)) from error
+        except Exception as error:
+            _write_debug_text(debug_dir, "error.txt", repr(error))
+            logger.exception("Seedream 分镜图片生成异常：标题=%s，错误=%s", request.title or "未命名分镜图片", error)
+            raise
+
+        result = _map_image_response(response.json())
+        await _store_image_if_ready(result, request.title or result.id or "分镜图片")
+        logger.info(
+            "Seedream 分镜图片生成完成：状态=%s，图片URL=%s，本地路径=%s，Base64=%s",
+            result.status,
+            "有" if result.image_url else "无",
+            result.local_image_path or "无",
+            "有" if result.b64_json else "无",
+        )
+        return result
+
+    def _get_api_key(self) -> str:
+        api_key = os.getenv("SEEDANCE_API_KEY", "").strip()
+        if not api_key:
+            raise SeedreamImageConfigurationError("未配置 Seedance API Key。请先在分镜生图页保存 API Key。")
+        return api_key
+
+    def _headers(self, api_key: str) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _build_payload(self, request: SeedreamImageGenerationRequest) -> dict[str, Any]:
+        prompt = request.prompt.strip()
+        if request.negative_prompt.strip():
+            prompt = f"{prompt}\n\n请避免：{request.negative_prompt.strip()}"
+        payload: dict[str, Any] = {
+            "model": _request_model(request),
+            "prompt": prompt,
+            "size": request.size,
+            "response_format": request.response_format,
+        }
+        if request.seed is not None:
+            payload["seed"] = request.seed
+        return payload
+
+
+async def _store_image_if_ready(result: SeedreamImageGenerationResult, fallback_name: str) -> None:
+    if result.image_url:
+        stored_media = await store_remote_media(result.image_url, "images", fallback_name)
+        result.original_image_url = result.image_url
+        result.local_image_path = stored_media.local_path
+        result.image_url = stored_media.local_url or result.image_url
+        if not stored_media.local_path:
+            logger.warning("Seedream 图片未能保存到本地：标题=%s，原因=远端图片下载失败或为空", fallback_name)
+        return
+
+    if result.b64_json:
+        stored_media = store_base64_image(result.b64_json, fallback_name)
+        result.local_image_path = stored_media.local_path
+        result.image_url = stored_media.local_url
+        if not stored_media.local_path:
+            logger.warning("Seedream 图片未能保存到本地：标题=%s，原因=Base64 写入失败", fallback_name)
+        return
+
+    logger.warning("Seedream 图片未能保存到本地：标题=%s，原因=响应缺少图片 URL 和 Base64", fallback_name)
+
+
+def _map_image_response(data: dict[str, Any]) -> SeedreamImageGenerationResult:
+    image_url = _find_first_string(data, {"url", "image_url", "imageUrl"})
+    b64_json = _find_first_string(data, {"b64_json", "b64Json", "base64"})
+    error_message = _extract_error_from_payload(data)
+
+    status: Literal["succeeded", "failed", "unknown"] = "succeeded" if image_url or b64_json else "unknown"
+    if error_message:
+        status = "failed"
+
+    return SeedreamImageGenerationResult(
+        id=str(data.get("id") or data.get("task_id") or ""),
+        model=str(data.get("model") or seedance_config.image_model),
+        status=status,
+        image_url=image_url,
+        original_image_url=image_url,
+        local_image_path="",
+        b64_json=b64_json,
+        error_message=error_message,
+        raw=data,
+    )
+
+
+def _find_first_string(value: Any, keys: set[str]) -> str:
+    if isinstance(value, dict):
+        for key in keys:
+            found = value.get(key)
+            if isinstance(found, str) and found.strip():
+                return found.strip()
+        for item in value.values():
+            found = _find_first_string(item, keys)
+            if found:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_first_string(item, keys)
+            if found:
+                return found
+    return ""
+
+
+def _extract_error_from_payload(data: dict[str, Any]) -> str:
+    error = data.get("error")
+    if isinstance(error, dict):
+        return str(error.get("message") or error.get("code") or "")
+    if error:
+        return str(error)
+    return ""
+
+
+def _request_model(request: SeedreamImageGenerationRequest) -> str:
+    return request.model.strip() or seedance_config.image_model
+
+
+def _extract_error_message(response: httpx.Response) -> str:
+    try:
+        data = response.json()
+    except ValueError:
+        return f"Seedream 请求失败：HTTP {response.status_code}"
+
+    error = data.get("error") if isinstance(data, dict) else None
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("code")
+        if message:
+            return f"Seedream 请求失败：{message}"
+    return f"Seedream 请求失败：HTTP {response.status_code}"
+
+
+def _prepare_debug_dir(debug_context: str) -> Path:
+    safe_context = "".join(char if char.isalnum() or char in "-_" else "-" for char in debug_context)
+    debug_dir = seedance_config.debug_dir / "images" / safe_context
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    return debug_dir
+
+
+def _write_debug_json(debug_dir: Path, filename: str, payload: Any) -> None:
+    (debug_dir / filename).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_debug_text(debug_dir: Path, filename: str, content: str) -> None:
+    (debug_dir / filename).write_text(content, encoding="utf-8")
+
+
+def _redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **payload,
+        "prompt": "已隐藏提交给 Seedream 的完整分镜图片提示词。",
+    }
+
+
+seedream_image_client = SeedreamImageClient()

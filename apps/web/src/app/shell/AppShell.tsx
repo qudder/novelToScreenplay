@@ -14,7 +14,7 @@ const navItems = [
   { to: "/screenplay", label: "剧本生成", icon: Clapperboard },
   { to: "/screenplay-overview", label: "剧本总览", icon: FileText },
   { to: "/storyboard-image-generation", label: "分镜生图", icon: ImagePlus },
-  { to: "/storyboard-images", label: "分镜图片", icon: FileImage },
+  { to: "/storyboard-images", label: "分镜管理", icon: FileImage },
   { to: "/video-generation", label: "视频生成", icon: Film },
   { to: "/video-management", label: "视频管理", icon: ListVideo }
 ];

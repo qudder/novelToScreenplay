@@ -1,4 +1,5 @@
 import { Download, FileText } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { useCurrentNovel } from "../../shared/currentNovel";
@@ -9,6 +10,7 @@ import { useEffect, useState } from "react";
 export function ScreenplayOverviewPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
   const currentNovel = useCurrentNovel();
+  const navigate = useNavigate();
   const [statusMessage, setStatusMessage] = useState("剧本总览会读取本地已保存的场景剧本。");
   const [draft, setDraft] = useState(() => getScreenplayDraft(currentNovel?.documentId));
   const completedScenes = draft?.scenes.filter((scene) => scene.content.trim().length > 0).length ?? 0;
@@ -36,6 +38,12 @@ export function ScreenplayOverviewPage() {
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "剧本导出失败。");
     }
+  }
+
+  function handleOpenSceneBoard(sceneId: string, blockId: string) {
+    navigate(`/scenes?blockId=${encodeURIComponent(blockId)}&sceneId=${encodeURIComponent(sceneId)}`, {
+      state: { blockId, sceneId }
+    });
   }
 
   return (
@@ -79,7 +87,12 @@ export function ScreenplayOverviewPage() {
           <div className="overview-scene-list">
             {draft?.scenes.length ? (
               draft.scenes.map((scene, index) => (
-                <article className="compact-card" key={scene.sceneId}>
+                <button
+                  className="compact-card clickable-card"
+                  type="button"
+                  key={scene.sceneId}
+                  onClick={() => handleOpenSceneBoard(scene.sceneId, scene.blockId)}
+                >
                   <strong>
                     {index + 1}. {scene.title}
                   </strong>
@@ -87,7 +100,7 @@ export function ScreenplayOverviewPage() {
                     {scene.location} · {scene.timeOfDay} · {scene.dramaticFunction}
                   </p>
                   <small>{scene.content.trim() ? `${scene.content.trim().length} 字` : "尚未编写"}</small>
-                </article>
+                </button>
               ))
             ) : (
               <article className="compact-card">
