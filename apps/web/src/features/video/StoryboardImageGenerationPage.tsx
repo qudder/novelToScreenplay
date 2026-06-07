@@ -150,6 +150,7 @@ export function StoryboardImageGenerationPage() {
 
     const now = new Date().toISOString();
     const promptTargetLabel = promptTarget.type === "shot" ? "完整镜头" : selectedFrame?.label || "定帧";
+    const selectedChapter = currentNovel.chapters.find((chapter) => chapter.id === selectedShot.chapterId);
     const title = `${selectedScene.title} · 镜头${selectedShotNumber} · ${promptTargetLabel}`;
     const selectedModel = customModel.trim() || model;
     const baseTask = {
@@ -177,7 +178,17 @@ export function StoryboardImageGenerationPage() {
         prompt,
         negativePrompt,
         size,
-        seed: seedValue
+        seed: seedValue,
+        documentId: currentNovel.documentId ?? "",
+        filename: currentNovel.filename,
+        chapterId: selectedShot.chapterId,
+        chapterTitle: selectedChapter?.title ?? selectedShot.chapterId,
+        sceneId: selectedScene.sceneId,
+        sceneTitle: selectedScene.title,
+        shotId: selectedShot.id,
+        shotLabel: `镜头${selectedShotNumber}`,
+        frameId: promptTarget.type === "shot" ? "whole-shot" : selectedFrame?.id ?? "",
+        frameLabel: promptTargetLabel
       });
       const imageUrl = result.imageUrl || (result.b64Json ? `data:image/png;base64,${result.b64Json}` : "");
       saveStoryboardImageTask({
@@ -188,6 +199,7 @@ export function StoryboardImageGenerationPage() {
         imageUrl,
         originalImageUrl: result.originalImageUrl,
         localImagePath: result.localImagePath,
+        media: result.media,
         errorMessage: result.errorMessage,
         updatedAt: new Date().toISOString()
       });
@@ -632,7 +644,6 @@ function buildFrameStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: Storybo
   const storyboardShots = buildStoryBoardShotsFromScreenplay(scene);
   const shotIndex = storyboardShots.findIndex((item) => item.id === shot.id);
   const shotNumber = shotIndex >= 0 ? shotIndex + 1 : 1;
-  const shotScreenplayText = getShotScreenplayText(shot, scene);
   return [
     `为影视分镜生成一张黑白粗略框架图。`,
     `画面风格：黑白线稿、分镜草图、低细节、只看布局，不要精致插画或电影剧照。`,
@@ -643,7 +654,6 @@ function buildFrameStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: Storybo
     `地点与时间：${scene.location || "地点待定"}，${scene.timeOfDay || "时间待定"}`,
     `人物：${scene.characters.join("、") || "相关人物"}`,
     `镜头编号：镜头${shotNumber}`,
-    shotScreenplayText ? `当前镜头剧本片段：${shotScreenplayText.slice(0, 600)}` : "",
     `基础景别：${shot.shotType || "景别待定"}`,
     `必须介绍人物的相对位置、朝向、前后景关系和大概场景结构；人物可用简化轮廓或剪影表示。`,
     frame.id === "whole-shot" ? `需要把该镜头的完整数据整合为单张草图，不要遗漏关键站位、焦点和场景空间。` : `不要扩展到其他分镜点，不要同时表现完整镜头运动或完整转场过程。`,

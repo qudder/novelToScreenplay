@@ -114,28 +114,38 @@ async def _analyze_single_chapter(
 ) -> ChapterAnalysis:
     chapter_text = _chapter_text(chapter, source_text)
     cache_path = _chapter_cache_path(chapter, chapter_text, filename)
+    legacy_cache_path = _legacy_chapter_cache_path(chapter, chapter_text, filename)
 
     if force_refresh and cache_path.exists():
         logger.info("已请求强制刷新，章节叙事分析缓存将被忽略：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
         cache_path.unlink(missing_ok=True)
+    if force_refresh and legacy_cache_path.exists():
+        logger.info("已请求强制刷新，旧章节叙事分析缓存将被忽略：章节ID=%s，缓存路径=%s", chapter.id, legacy_cache_path)
 
-    if cache_path.exists():
-        logger.info("发现章节叙事分析缓存候选：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
+    read_cache_path = cache_path if cache_path.exists() else legacy_cache_path
+    if read_cache_path.exists() and not force_refresh:
+        logger.info("发现章节叙事分析缓存候选：章节ID=%s，缓存路径=%s", chapter.id, read_cache_path)
         try:
-            payload = _unwrap_cache_payload(json.loads(cache_path.read_text(encoding="utf-8")))
+            payload = _unwrap_cache_payload(json.loads(read_cache_path.read_text(encoding="utf-8")))
             if not _has_required_source_refs(payload):
-                logger.warning("章节叙事分析缓存缺少来源引用，将刷新：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
-                cache_path.unlink(missing_ok=True)
+                logger.warning("章节叙事分析缓存缺少来源引用，将刷新：章节ID=%s，缓存路径=%s", chapter.id, read_cache_path)
+                if read_cache_path == cache_path:
+                    read_cache_path.unlink(missing_ok=True)
                 raise _RefreshChapterCache()
             analysis = _parse_analysis(chapter.id, payload)
             _attach_source_positions(analysis, chapter_text)
-            logger.info("章节叙事分析命中缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
+            if read_cache_path != cache_path:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_text(json.dumps(_cache_payload(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+                logger.info("旧章节叙事分析缓存已迁移到统一目录：章节ID=%s，新缓存路径=%s", chapter.id, cache_path)
+            logger.info("章节叙事分析命中缓存：章节ID=%s，缓存路径=%s", chapter.id, read_cache_path)
             return analysis
         except _RefreshChapterCache:
             pass
         except json.JSONDecodeError as error:
-            logger.warning("章节叙事分析缓存无效，已忽略：章节ID=%s，缓存路径=%s，错误=%s", chapter.id, cache_path, error)
-            cache_path.unlink(missing_ok=True)
+            logger.warning("章节叙事分析缓存无效，已忽略：章节ID=%s，缓存路径=%s，错误=%s", chapter.id, read_cache_path, error)
+            if read_cache_path == cache_path:
+                read_cache_path.unlink(missing_ok=True)
 
     async with semaphore:
         user_prompt = _build_user_prompt(chapter, chapter_text)
@@ -161,6 +171,7 @@ async def _analyze_single_chapter(
             logger.exception("章节叙事分析失败，已跳过本章：章节ID=%s，标题=%s，错误=%s", chapter.id, chapter.title, error)
             return _empty_analysis(chapter.id)
         (debug_dir / "model_output.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(json.dumps(_cache_payload(payload), ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info("章节叙事分析已写入缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
         analysis = _parse_analysis(chapter.id, payload)
@@ -175,6 +186,10 @@ def _chapter_cache_key(chapter: Chapter, chapter_text: str) -> str:
 
 def _chapter_cache_path(chapter: Chapter, chapter_text: str, filename: str) -> Path:
     return deepseek_config.cache_dir / f"{_chapter_debug_name(chapter, chapter_text, filename)}.json"
+
+
+def _legacy_chapter_cache_path(chapter: Chapter, chapter_text: str, filename: str) -> Path:
+    return deepseek_config.legacy_cache_dir / f"{_chapter_debug_name(chapter, chapter_text, filename)}.json"
 
 
 def _chapter_debug_dir(chapter: Chapter, chapter_text: str, filename: str) -> Path:

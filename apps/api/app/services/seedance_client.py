@@ -24,6 +24,7 @@ class SeedanceCreateTaskRequest(BaseModel):
     negative_prompt: str = ""
     screenplay_text: str = ""
     reference_image_url: str = ""
+    reference_image_urls: list[str] = Field(default_factory=list)
     reference_image_role: Literal["reference", "first_frame"] = "first_frame"
     ratio: str = "16:9"
     duration: int = 5
@@ -53,13 +54,13 @@ class SeedanceClient:
         debug_dir = _prepare_debug_dir("create-task")
         _write_debug_json(debug_dir, "request.json", _redact_payload(payload))
         logger.info(
-            "准备提交 Seedance 视频任务：模型=%s，标题=%s，画幅=%s，时长=%s，清晰度=%s，参考图=%s",
+            "准备提交 Seedance 视频任务：模型=%s，标题=%s，画幅=%s，时长=%s，清晰度=%s，参考图数量=%s",
             _request_model(request),
             request.title or "未命名任务",
             request.ratio,
             request.duration,
             request.resolution,
-            "有" if request.reference_image_url.strip() else "无",
+            len(_reference_image_urls(request)),
         )
 
         try:
@@ -140,8 +141,10 @@ class SeedanceClient:
     def _build_create_payload(self, request: SeedanceCreateTaskRequest) -> dict[str, Any]:
         text = _build_generation_text(request)
         content: list[dict[str, Any]] = []
-        if request.reference_image_url.strip():
-            content.append(_build_image_content(request.reference_image_url.strip(), request.reference_image_role))
+        reference_urls = _reference_image_urls(request)
+        for index, image_url in enumerate(reference_urls):
+            image_role = request.reference_image_role if index == 0 else "reference"
+            content.append(_build_image_content(image_url, image_role))
         content.append({"type": "text", "text": text})
         payload: dict[str, Any] = {
             "model": _request_model(request),
@@ -159,9 +162,13 @@ class SeedanceClient:
 
 def _build_generation_text(request: SeedanceCreateTaskRequest) -> str:
     parts = [request.prompt.strip()]
-    if request.reference_image_url.strip():
+    reference_urls = _reference_image_urls(request)
+    if reference_urls:
         role_text = "首帧" if request.reference_image_role == "first_frame" else "视觉参考"
-        parts.append(f"图片约束：已提供一张分镜图片作为{role_text}，请保持主要构图、人物位置、光线氛围和视觉焦点一致。")
+        if len(reference_urls) == 1:
+            parts.append(f"图片约束：已提供一张分镜图片作为{role_text}，请保持主要构图、人物位置、光线氛围和视觉焦点一致。")
+        else:
+            parts.append(f"图片约束：已提供 {len(reference_urls)} 张分镜图片作为视觉参考，其中第一张作为{role_text}，请综合保持人物位置、构图连续性和视觉焦点一致。")
     if request.screenplay_text.strip():
         parts.append(f"剧本参考：\n{request.screenplay_text.strip()[:6000]}")
     if request.negative_prompt.strip():
@@ -177,6 +184,16 @@ def _build_image_content(image_url: str, role: str) -> dict[str, Any]:
         "image_url": {"url": image_url},
         "role": role,
     }
+
+
+def _reference_image_urls(request: SeedanceCreateTaskRequest) -> list[str]:
+    urls = [request.reference_image_url, *request.reference_image_urls]
+    unique_urls: list[str] = []
+    for url in urls:
+        normalized_url = url.strip()
+        if normalized_url and normalized_url not in unique_urls:
+            unique_urls.append(normalized_url)
+    return unique_urls
 
 
 def _map_task_response(data: dict[str, Any]) -> SeedanceTaskResult:

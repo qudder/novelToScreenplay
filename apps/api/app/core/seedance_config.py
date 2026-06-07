@@ -1,13 +1,14 @@
 import os
 from pathlib import Path
 
+from app.core.storage_config import storage_config
+
 
 class SeedanceConfig:
     def __init__(self) -> None:
-        app_dir = Path(__file__).resolve().parents[1]
-        workspace_dir = Path(__file__).resolve().parents[4]
-        self.debug_dir = Path(os.getenv("SEEDANCE_DEBUG_DIR", app_dir / ".debug" / "seedance"))
-        self.media_dir = Path(os.getenv("GENERATED_MEDIA_DIR", workspace_dir / ".data" / "generated_media"))
+        self.debug_dir = Path(os.getenv("SEEDANCE_DEBUG_DIR", storage_config.debug_dir / "seedance"))
+        self.seedream_debug_dir = Path(os.getenv("SEEDREAM_DEBUG_DIR", storage_config.debug_dir / "seedream"))
+        self.media_dir = storage_config.generated_media_dir
 
     @property
     def base_url(self) -> str:
@@ -31,7 +32,7 @@ class SeedanceConfig:
 
     @property
     def public_media_prefix(self) -> str:
-        return os.getenv("GENERATED_MEDIA_PUBLIC_PREFIX", "/media/generated").rstrip("/")
+        return storage_config.public_media_prefix
 
 
 seedance_config = SeedanceConfig()

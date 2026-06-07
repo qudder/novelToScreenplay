@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Graph } from "@antv/g6";
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../shared/PageHeader";
 import { useCurrentNovel } from "../../shared/currentNovel";
 import { characters as mockCharacters, relationships as mockRelationships } from "../../shared/mockData";
@@ -80,6 +81,7 @@ export function RelationshipsPage() {
   const sectionRef = useEntranceAnimation<HTMLDivElement>();
   const graphContainerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<Graph | null>(null);
+  const navigate = useNavigate();
   const currentNovel = useCurrentNovel();
 
   const visibleCharacters = currentNovel ? currentNovel.characters : mockCharacters;
@@ -143,6 +145,11 @@ export function RelationshipsPage() {
 
     graph.render();
     graphRef.current = graph;
+    graph.on("node:click", (event: unknown) => {
+      const nodeId = getGraphNodeId(event);
+      if (!nodeId) return;
+      navigate(`/characters?characterId=${encodeURIComponent(nodeId)}&from=relationships`);
+    });
 
     const resizeObserver = new ResizeObserver(() => {
       graph.resize();
@@ -155,7 +162,7 @@ export function RelationshipsPage() {
       graph.destroy();
       graphRef.current = null;
     };
-  }, [graphData]);
+  }, [graphData, navigate]);
 
   return (
     <section ref={sectionRef} className="page">
@@ -182,4 +189,14 @@ export function RelationshipsPage() {
       </div>
     </section>
   );
+}
+
+function getGraphNodeId(event: unknown) {
+  const payload = event as {
+    target?: { id?: string };
+    targetType?: string;
+    data?: { id?: string };
+    item?: { id?: string; getID?: () => string };
+  };
+  return payload.target?.id || payload.data?.id || payload.item?.id || payload.item?.getID?.() || "";
 }

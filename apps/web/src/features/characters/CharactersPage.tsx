@@ -1,4 +1,6 @@
-import { Merge, SortDesc } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { GitBranch, Merge, SortDesc } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../shared/PageHeader";
 import { characters as mockCharacters } from "../../shared/mockData";
 import { useCurrentNovel } from "../../shared/currentNovel";
@@ -7,9 +9,18 @@ import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
 export function CharactersPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
+  const targetCardRef = useRef<HTMLElement | null>(null);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const currentNovel = useCurrentNovel();
   const visibleCharacters = currentNovel ? currentNovel.characters : mockCharacters;
   const sortedCharacters = [...visibleCharacters].sort((a, b) => b.importance - a.importance);
+  const linkedCharacterId = searchParams.get("characterId") ?? "";
+  const shouldShowRelationshipReturn = searchParams.get("from") === "relationships";
+
+  useEffect(() => {
+    targetCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [linkedCharacterId, sortedCharacters.length]);
 
   return (
     <section ref={ref} className="page">
@@ -34,10 +45,20 @@ export function CharactersPage() {
           按重要性排序
         </button>
       </div>
+      {shouldShowRelationshipReturn ? (
+        <button className="floating-return-button" type="button" onClick={() => navigate("/relationships")}>
+          <GitBranch size={16} />
+          返回人物关系图
+        </button>
+      ) : null}
       {sortedCharacters.length > 0 ? (
         <div className="card-grid">
           {sortedCharacters.map((character) => (
-            <article className="character-card animate-in" key={character.id}>
+            <article
+              className={`character-card animate-in${character.id === linkedCharacterId ? " linked" : ""}`}
+              key={character.id}
+              ref={character.id === linkedCharacterId ? targetCardRef : undefined}
+            >
               <div className="card-topline">
                 <strong>{character.name}</strong>
                 <span>{character.importance}</span>

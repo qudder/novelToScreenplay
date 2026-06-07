@@ -16,6 +16,7 @@ export type StoryboardImageTask = {
   imageUrl?: string;
   originalImageUrl?: string;
   localImagePath?: string;
+  media?: Record<string, unknown>;
   errorMessage?: string;
   novel?: VideoTaskTag;
   scene?: VideoTaskTag;

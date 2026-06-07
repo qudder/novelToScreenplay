@@ -69,7 +69,7 @@ export function VideoManagementPage() {
     if (task.novel?.id) {
       switchCurrentNovel(task.novel.id);
     }
-    navigate(tag.route);
+    navigate(withReturnSource(tag.route, "video-management"));
   }
 
   async function handleRefreshTask(task: VideoTask) {
@@ -156,8 +156,11 @@ export function VideoManagementPage() {
                     {task.novel ? <TagButton icon="novel" label={`小说：${task.novel.label}`} onClick={() => handleOpenTag(task, task.novel!)} /> : null}
                     {task.chapter ? <TagButton icon="chapter" label={`章节：${task.chapter.label}`} onClick={() => handleOpenTag(task, task.chapter!)} /> : null}
                     {task.scene ? <TagButton icon="scene" label={`场景：${task.scene.label}`} onClick={() => handleOpenTag(task, task.scene!)} /> : null}
-                    {task.storyboardImage ? <TagButton icon="image" label={`分镜图片：${task.storyboardImage.label}`} onClick={() => handleOpenTag(task, task.storyboardImage!)} /> : null}
-                    {!task.novel && !task.chapter && !task.scene && !task.storyboardImage ? (
+                    {task.shot ? <TagButton icon="shot" label={`镜头：${task.shot.label}`} onClick={() => handleOpenTag(task, task.shot!)} /> : null}
+                    {(task.storyboardImages?.length ? task.storyboardImages : task.storyboardImage ? [task.storyboardImage] : []).map((storyboardImage) => (
+                      <TagButton key={storyboardImage.id} icon="image" label={`分镜图片：${storyboardImage.label}`} onClick={() => handleOpenTag(task, storyboardImage)} />
+                    ))}
+                    {!task.novel && !task.chapter && !task.scene && !task.shot && !task.storyboardImage && !task.storyboardImages?.length ? (
                       <span className="video-static-tag">
                         <Tags size={14} />
                         未关联项目标签
@@ -242,8 +245,8 @@ export function VideoManagementPage() {
   );
 }
 
-function TagButton({ icon, label, onClick }: { icon: "novel" | "chapter" | "scene" | "image"; label: string; onClick: () => void }) {
-  const Icon = icon === "novel" ? BookOpen : icon === "chapter" ? Layers : icon === "scene" ? Clapperboard : ImagePlus;
+function TagButton({ icon, label, onClick }: { icon: "novel" | "chapter" | "scene" | "shot" | "image"; label: string; onClick: () => void }) {
+  const Icon = icon === "novel" ? BookOpen : icon === "chapter" ? Layers : icon === "scene" ? Clapperboard : icon === "shot" ? Film : ImagePlus;
   return (
     <button className="video-link-tag" type="button" onClick={onClick}>
       <Icon size={14} />
@@ -261,6 +264,11 @@ function statusText(status: VideoTask["status"]) {
     failed: "失败"
   };
   return labels[status];
+}
+
+function withReturnSource(route: string, source: string) {
+  const separator = route.includes("?") ? "&" : "?";
+  return `${route}${separator}from=${source}`;
 }
 
 function formatDateTime(value: string) {

@@ -5,6 +5,7 @@ import { studioApi } from "../../shared/api";
 import { getActiveNovelId, switchCurrentNovel, useCurrentNovel, useNovelLibrary } from "../../shared/currentNovel";
 import { getScreenplayDraft, type SceneScreenplayDraft } from "../../shared/screenplayDraft";
 import { type StoryboardImageTask, useStoryboardImageTasks } from "../../shared/storyboardImages";
+import type { ShotPlan } from "../../shared/types";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 import { saveVideoTask, type VideoTaskTag } from "../../shared/videoTasks";
 
@@ -14,6 +15,31 @@ type MediaAsset = {
   type: "image" | "video" | "audio" | "screenplay";
   url?: string;
   size: number;
+};
+
+type VideoGranularityOption = {
+  id: string;
+  type: "scene" | "shot" | "frame";
+  label: string;
+  description: string;
+  scene: SceneScreenplayDraft;
+  sceneIndex: number;
+  shot?: StoryboardShot;
+  shotIndex?: number;
+  frame?: ShotFrame;
+};
+
+type ShotFrame = {
+  id: string;
+  label: string;
+  focus: string;
+  value: string;
+  instruction: string;
+};
+
+type StoryboardShot = ShotPlan & {
+  screenplayText?: string;
+  screenplayShotNumber?: number;
 };
 
 const ratioOptions = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
@@ -59,8 +85,10 @@ export function VideoGenerationPage() {
   const [statusMessage, setStatusMessage] = useState("配置素材和剧本后，可创建 Seedance 视频生成任务。");
   const [selectedSceneTag, setSelectedSceneTag] = useState<VideoTaskTag | undefined>(undefined);
   const [selectedChapterTag, setSelectedChapterTag] = useState<VideoTaskTag | undefined>(undefined);
-  const [selectedStoryboardImageTag, setSelectedStoryboardImageTag] = useState<VideoTaskTag | undefined>(undefined);
-  const [selectedStoryboardImageTask, setSelectedStoryboardImageTask] = useState<StoryboardImageTask | undefined>(undefined);
+  const [selectedShotTag, setSelectedShotTag] = useState<VideoTaskTag | undefined>(undefined);
+  const [selectedStoryboardImageTasks, setSelectedStoryboardImageTasks] = useState<StoryboardImageTask[]>([]);
+  const granularityOptions = useMemo(() => buildVideoGranularityOptions(draft?.scenes ?? []), [draft]);
+  const selectedStoryboardImageTags = selectedStoryboardImageTasks.map(storyboardImageTaskToTag);
 
   useEffect(() => {
     setScreenplayText(buildScreenplayText(draft));
@@ -175,8 +203,8 @@ export function VideoGenerationPage() {
     if (novel) {
       setSelectedSceneTag(undefined);
       setSelectedChapterTag(undefined);
-      setSelectedStoryboardImageTag(undefined);
-      setSelectedStoryboardImageTask(undefined);
+      setSelectedShotTag(undefined);
+      clearSelectedStoryboardImages();
       setStatusMessage(`已切换到《${novel.filename}》，可导入该小说的章节剧本。`);
       return;
     }
@@ -192,15 +220,53 @@ export function VideoGenerationPage() {
     setScreenplayText(text);
     setSelectedSceneTag(undefined);
     setSelectedChapterTag(undefined);
+    setSelectedShotTag(undefined);
+    clearSelectedStoryboardImages();
     setStatusMessage(`已导入《${draft?.filename ?? currentNovel?.filename ?? "当前小说"}》的完整剧本。`);
   }
 
-  function handleImportSceneDraft(scene: SceneScreenplayDraft, index: number) {
-    setScreenplayText(buildSceneScreenplayText(scene, index));
-    setSelectedChapterTag({ id: scene.blockId, label: scene.blockTitle || "未命名章节/总场景", route: "/scenes" });
-    setSelectedSceneTag({ id: scene.sceneId, label: scene.title || `场景 ${index + 1}`, route: "/screenplay" });
-    setPrompt(`根据当前章节/场景剧本生成电影感镜头，突出“${scene.title}”的场面调度、人物行动、环境氛围和视角转换。`);
-    setStatusMessage(`已导入章节剧本：${scene.title}`);
+  function handleImportGranularityOption(option: VideoGranularityOption) {
+    setScreenplayText(buildGranularityScreenplayText(option));
+    setSelectedChapterTag({ id: option.scene.blockId, label: option.scene.blockTitle || "未命名章节/总场景", route: "/scenes" });
+    setSelectedSceneTag({ id: option.scene.sceneId, label: option.scene.title || `场景 ${option.sceneIndex + 1}`, route: "/screenplay" });
+    setSelectedShotTag(option.shot ? { id: option.shot.id, label: buildShotLabel(option.shot, option.shotIndex ?? 0), route: "/storyboard-image-generation" } : undefined);
+    setPrompt(buildGranularityPrompt(option));
+    const matchedStoryboardImages = findRelatedStoryboardImages(option, relatedStoryboardImages);
+    if (matchedStoryboardImages.length) {
+      selectStoryboardImageTasks(matchedStoryboardImages);
+      setStatusMessage(`已导入${formatGranularityType(option.type)}：${option.label}，并自动导入 ${matchedStoryboardImages.length} 张相关分镜图片。`);
+      return;
+    }
+    if (option.shot) {
+      clearSelectedStoryboardImages();
+      setStatusMessage(`已导入${formatGranularityType(option.type)}：${option.label}，未找到可用的相关分镜图片。`);
+      return;
+    }
+    clearSelectedStoryboardImages();
+    setStatusMessage(`已导入${formatGranularityType(option.type)}：${option.label}`);
+  }
+
+  function selectStoryboardImageTasks(tasks: StoryboardImageTask[]) {
+    setSelectedStoryboardImageTasks(uniqueStoryboardImageTasks(tasks));
+  }
+
+  function toggleStoryboardImageTask(task: StoryboardImageTask) {
+    setSelectedStoryboardImageTasks((current) => {
+      if (current.some((item) => item.id === task.id)) {
+        return current.filter((item) => item.id !== task.id);
+      }
+      return uniqueStoryboardImageTasks([...current, task]);
+    });
+    setStatusMessage(task.imageUrl || task.originalImageUrl ? `已更新分镜图片参考：${task.title}` : `已选择分镜图片任务：${task.title}，但该任务暂无图片 URL。`);
+  }
+
+  function removeStoryboardImageTask(taskId: string) {
+    setSelectedStoryboardImageTasks((current) => current.filter((item) => item.id !== taskId));
+    setStatusMessage("已移除一张分镜图片参考。");
+  }
+
+  function clearSelectedStoryboardImages() {
+    setSelectedStoryboardImageTasks([]);
   }
 
   async function handleCreateTask() {
@@ -217,17 +283,20 @@ export function VideoGenerationPage() {
       setStatusMessage("Seed 必须是非负整数，留空则由 Seedance 随机生成。");
       return;
     }
-    if (selectedStoryboardImageTag && !selectedStoryboardImageTask?.imageUrl) {
-      setStatusMessage("已选择分镜图片任务，但该任务还没有可用图片 URL，暂不能作为首帧提交。");
+    const referenceImageUrls = getStoryboardImageUrls(selectedStoryboardImageTasks);
+    if (selectedStoryboardImageTasks.length && !referenceImageUrls.length) {
+      setStatusMessage("已选择分镜图片任务，但这些任务还没有可用图片 URL，暂不能作为参考图提交。");
       return;
     }
     const now = new Date().toISOString();
-    const taskTitle = selectedSceneTag?.label || currentNovel?.filename || "未命名视频任务";
+    const taskTitle = selectedShotTag?.label
+      ? `${selectedSceneTag?.label || currentNovel?.filename || "未命名场景"} · ${selectedShotTag.label}`
+      : selectedSceneTag?.label || currentNovel?.filename || "未命名视频任务";
     const selectedModel = customModel.trim() || model;
     setIsCreatingTask(true);
     setStatusMessage("正在提交 Seedance 视频生成任务...");
     try {
-      const referenceImageUrl = selectedStoryboardImageTask?.originalImageUrl || selectedStoryboardImageTask?.imageUrl;
+      const referenceImageUrl = referenceImageUrls[0];
       const result = await studioApi.createSeedanceVideoTask({
         title: taskTitle,
         model: selectedModel,
@@ -235,6 +304,7 @@ export function VideoGenerationPage() {
         negativePrompt,
         screenplayText,
         referenceImageUrl,
+        referenceImageUrls,
         referenceImageRole: referenceImageUrl ? "first_frame" : undefined,
         ratio,
         duration: Number(duration),
@@ -265,7 +335,9 @@ export function VideoGenerationPage() {
           : undefined,
         chapter: selectedChapterTag,
         scene: selectedSceneTag,
-        storyboardImage: selectedStoryboardImageTag,
+        shot: selectedShotTag,
+        storyboardImage: selectedStoryboardImageTags[0],
+        storyboardImages: selectedStoryboardImageTags,
         videoUrl: result.videoUrl,
         originalVideoUrl: result.originalVideoUrl,
         localVideoPath: result.localVideoPath,
@@ -322,20 +394,18 @@ export function VideoGenerationPage() {
                     <FileVideo size={16} />
                     导入全剧本
                   </button>
-                  <span>{draft?.scenes.length ? `当前可导入 ${draft.scenes.length} 段章节/场景剧本` : "当前小说暂无剧本草稿"}</span>
+                  <span>{granularityOptions.length ? `当前可选 ${granularityOptions.length} 个视频生成粒度` : "当前小说暂无剧本草稿"}</span>
                 </div>
-                {draft?.scenes.length ? (
+                {granularityOptions.length ? (
                   <div className="video-scene-import-list">
-                    {draft.scenes.map((scene, index) => (
-                      <article className="video-scene-import-item" key={scene.sceneId}>
+                    {granularityOptions.map((option) => (
+                      <article className={`video-scene-import-item ${option.type}`} key={option.id}>
                         <div>
-                          <strong>{scene.title || `章节剧本 ${index + 1}`}</strong>
-                          <small>
-                            {scene.blockTitle} · {scene.location || "地点待定"} · {scene.timeOfDay || "时间待定"}
-                          </small>
+                          <strong>{option.label}</strong>
+                          <small>{option.description}</small>
                         </div>
-                        <button className="ghost-button" type="button" onClick={() => handleImportSceneDraft(scene, index)}>
-                          导入本段
+                        <button className="ghost-button" type="button" onClick={() => handleImportGranularityOption(option)}>
+                          {option.type === "scene" ? "导入场景" : option.type === "shot" ? "导入镜头" : "导入分镜"}
                         </button>
                       </article>
                     ))}
@@ -394,11 +464,12 @@ export function VideoGenerationPage() {
           <AssetSection title="图片参考" assets={imageAssets} onRemove={handleRemoveAsset} />
           <StoryboardImageSource
             tasks={relatedStoryboardImages}
-            selectedTag={selectedStoryboardImageTag}
-            onSelect={(tag, task) => {
-              setSelectedStoryboardImageTag(tag);
-              setSelectedStoryboardImageTask(task);
-              setStatusMessage(task.imageUrl ? `已选择分镜图片首帧：${tag.label}` : `已选择分镜图片任务：${tag.label}，但该任务暂无图片 URL。`);
+            selectedTasks={selectedStoryboardImageTasks}
+            onToggle={toggleStoryboardImageTask}
+            onRemove={removeStoryboardImageTask}
+            onClear={() => {
+              clearSelectedStoryboardImages();
+              setStatusMessage("已清空当前导入的分镜图片参考。");
             }}
           />
           <AssetSection title="视频参考" assets={videoAssets} onRemove={handleRemoveAsset} />
@@ -453,6 +524,8 @@ export function VideoGenerationPage() {
             <p>
               素材：{imageAssets.length} 图 · {videoAssets.length} 视频 · {audioAssets.length} 音频
             </p>
+            <p>分镜参考：{selectedStoryboardImageTasks.length} 张</p>
+            <p>粒度：{selectedShotTag?.label || selectedSceneTag?.label || (screenplayText.trim() ? "完整剧本/手动文本" : "未选择")}</p>
             <button className="primary-button" type="button" disabled={isCreatingTask} onClick={handleCreateTask}>
               <Play size={16} />
               {isCreatingTask ? "提交中..." : "创建视频任务"}
@@ -479,6 +552,286 @@ function buildSceneScreenplayText(scene: SceneScreenplayDraft, index: number) {
     scene.characters.length ? `人物：${scene.characters.join("、")}` : ""
   ].filter(Boolean);
   return `${meta.join("\n")}\n\n${scene.content}`;
+}
+
+function buildGranularityScreenplayText(option: VideoGranularityOption) {
+  if (option.type === "scene") return buildSceneScreenplayText(option.scene, option.sceneIndex);
+  if (option.type === "shot" && option.shot) {
+    return `${buildSceneMetaText(option.scene, option.sceneIndex)}
+
+${buildShotMetaText(option.shot, option.shotIndex ?? 0)}
+
+${getShotScreenplayText(option.shot, option.scene)}`;
+  }
+  if (option.type === "frame" && option.shot && option.frame) {
+    return `${buildSceneMetaText(option.scene, option.sceneIndex)}
+
+${buildShotMetaText(option.shot, option.shotIndex ?? 0)}
+
+分镜粒度：${option.frame.label}
+分镜要点：${option.frame.focus}：${option.frame.value}
+生成要求：${option.frame.instruction}
+
+${getShotScreenplayText(option.shot, option.scene)}`;
+  }
+  return buildSceneScreenplayText(option.scene, option.sceneIndex);
+}
+
+function buildSceneMetaText(scene: SceneScreenplayDraft, index: number) {
+  return [
+    `场景 ${index + 1}：${scene.title}`,
+    scene.blockTitle ? `所属章节/总场景：${scene.blockTitle}` : "",
+    scene.location ? `地点：${scene.location}` : "",
+    scene.timeOfDay ? `时间：${scene.timeOfDay}` : "",
+    scene.characters.length ? `人物：${scene.characters.join("、")}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildShotMetaText(shot: StoryboardShot, index: number) {
+  return [
+    `镜头 ${index + 1}`,
+    shot.shotType ? `景别：${shot.shotType}` : "",
+    shot.viewpoint ? `视角：${shot.viewpoint}` : "",
+    shot.composition ? `构图：${shot.composition}` : "",
+    shot.cameraMovement ? `运动：${shot.cameraMovement}` : "",
+    shot.visualFocus ? `焦点：${shot.visualFocus}` : "",
+    shot.emotionalPurpose ? `情绪：${shot.emotionalPurpose}` : "",
+    shot.transition ? `转场：${shot.transition}` : "",
+    shot.eventTitle ? `事件：${shot.eventTitle}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildGranularityPrompt(option: VideoGranularityOption) {
+  if (option.type === "scene") {
+    return `根据当前场景剧本生成电影感视频，突出“${option.scene.title}”的场面调度、人物行动、环境氛围和视角转换。`;
+  }
+  if (option.type === "shot" && option.shot) {
+    return `根据当前完整镜头生成 ${option.scene.title} 的电影感视频，严格保持镜头${(option.shotIndex ?? 0) + 1}的景别、视角、构图、运动、视觉焦点和情绪目的。`;
+  }
+  if (option.type === "frame" && option.shot && option.frame) {
+    return `根据当前小分镜生成 ${option.scene.title} 的短视频片段，重点执行“${option.frame.label}（${option.frame.focus}）”：${option.frame.value}。请只围绕该分镜粒度扩展动作，不扩写到整个场景。`;
+  }
+  return "根据剧本生成电影感镜头，保持人物行动、场景氛围和视角转换一致。";
+}
+
+function buildVideoGranularityOptions(scenes: SceneScreenplayDraft[]): VideoGranularityOption[] {
+  return scenes.flatMap((scene, sceneIndex) => {
+    const shots = buildStoryBoardShotsFromScreenplay(scene);
+    const sceneOption: VideoGranularityOption = {
+      id: `scene:${scene.sceneId}`,
+      type: "scene",
+      label: scene.title || `场景 ${sceneIndex + 1}`,
+      description: `整场景 · ${scene.blockTitle || "未分组总场景"} · ${scene.location || "地点待定"} · ${shots.length} 个镜头`,
+      scene,
+      sceneIndex
+    };
+    const shotOptions = shots.flatMap((shot, shotIndex) => {
+      const shotOption: VideoGranularityOption = {
+        id: `shot:${scene.sceneId}:${shot.id}`,
+        type: "shot",
+        label: buildShotLabel(shot, shotIndex),
+        description: `完整镜头 · ${scene.title} · ${[shot.shotType, shot.viewpoint, shot.visualFocus].filter(Boolean).join(" / ") || "镜头信息待定"}`,
+        scene,
+        sceneIndex,
+        shot,
+        shotIndex
+      };
+      const frameOptions = getShotFrames(shot).map((frame) => ({
+        id: `frame:${scene.sceneId}:${shot.id}:${frame.id}`,
+        type: "frame" as const,
+        label: `${buildShotLabel(shot, shotIndex)} · ${frame.label}`,
+        description: `单个分镜 · ${frame.focus} · ${frame.value || "分镜要点待定"}`,
+        scene,
+        sceneIndex,
+        shot,
+        shotIndex,
+        frame
+      }));
+      return [shotOption, ...frameOptions];
+    });
+    return [sceneOption, ...shotOptions];
+  });
+}
+
+function findRelatedStoryboardImages(option: VideoGranularityOption, tasks: StoryboardImageTask[]) {
+  if (!option.shot) return [];
+  const shotMatchedTasks = tasks.filter((task) => task.shot?.id === option.shot?.id && (!task.scene?.id || task.scene.id === option.scene.sceneId));
+  if (!shotMatchedTasks.length) return [];
+  const availableTasks = shotMatchedTasks.filter((task) => task.imageUrl || task.originalImageUrl);
+  const candidates = availableTasks.length ? availableTasks : shotMatchedTasks;
+  if (!option.frame) return candidates;
+
+  const frameKeyword = normalizeStoryboardFrameLabel(option.frame.label);
+  const exactFrameTask = candidates.find((task) => normalizeStoryboardFrameLabel(`${task.title} ${task.shot?.label ?? ""}`).includes(frameKeyword));
+  return exactFrameTask ? [exactFrameTask] : candidates;
+}
+
+function storyboardImageTaskToTag(task: StoryboardImageTask): VideoTaskTag {
+  return { id: task.id, label: task.title, route: "/storyboard-images" };
+}
+
+function uniqueStoryboardImageTasks(tasks: StoryboardImageTask[]) {
+  const uniqueTasks = new Map<string, StoryboardImageTask>();
+  tasks.forEach((task) => uniqueTasks.set(task.id, task));
+  return Array.from(uniqueTasks.values());
+}
+
+function getStoryboardImageUrls(tasks: StoryboardImageTask[]) {
+  return tasks
+    .map((task) => task.originalImageUrl || task.imageUrl || "")
+    .filter(Boolean)
+    .filter((url, index, urls) => urls.indexOf(url) === index);
+}
+
+function normalizeStoryboardFrameLabel(value: string) {
+  return value.replace(/分镜|定帧|完整镜头|当前镜头/g, "").replace(/\s+/g, "");
+}
+
+function buildShotLabel(shot: StoryboardShot, index: number) {
+  return `镜头${index + 1}${shot.shotType ? `：${shot.shotType}` : ""}`;
+}
+
+function formatGranularityType(type: VideoGranularityOption["type"]) {
+  const labels = {
+    scene: "整场景",
+    shot: "完整镜头",
+    frame: "单个分镜"
+  };
+  return labels[type];
+}
+
+function getShotFrames(shot: StoryboardShot): ShotFrame[] {
+  return [
+    {
+      id: "composition",
+      label: "分镜1",
+      focus: "构图",
+      value: shot.composition || "构图待定",
+      instruction: "只生成该镜头的构图段落，重点保持人物相对位置、画面分区、前后景关系和大概场景轮廓。"
+    },
+    {
+      id: "focus",
+      label: "分镜2",
+      focus: "焦点",
+      value: shot.visualFocus || "视觉焦点待定",
+      instruction: "只生成该镜头的焦点段落，重点保持观众视线落点、人物或物件的大概位置。"
+    },
+    {
+      id: "viewpoint",
+      label: "分镜3",
+      focus: "视角",
+      value: shot.viewpoint || "视角待定",
+      instruction: "只生成该镜头的视角段落，重点保持机位高度、观察方向、人物朝向和空间距离。"
+    },
+    {
+      id: "emotion",
+      label: "分镜4",
+      focus: "情绪",
+      value: shot.emotionalPurpose || "情绪目的待定",
+      instruction: "只生成该镜头的情绪段落，重点用人物姿态、距离、压迫感和节奏表达情绪。"
+    },
+    {
+      id: "transition",
+      label: "分镜5",
+      focus: "转场",
+      value: shot.transition || "转场待定",
+      instruction: "只生成该镜头的转场段落，重点表现离场、进入、遮挡或视线方向等空间变化。"
+    }
+  ];
+}
+
+function buildStoryBoardShotsFromScreenplay(scene?: SceneScreenplayDraft): StoryboardShot[] {
+  if (!scene) return [];
+  const screenplayShots = parseScreenplayShots(scene.content);
+  if (!screenplayShots.length) return scene.shotPlans;
+
+  return screenplayShots.map((screenplayShot, index) => {
+    const referenceShot = scene.shotPlans[index];
+    return {
+      ...(referenceShot ?? createEmptyShot(scene, index)),
+      id: referenceShot?.id ?? `screenplay-shot-${scene.sceneId}-${screenplayShot.number}`,
+      sequenceOrder: screenplayShot.number,
+      shotType: screenplayShot.shotType || referenceShot?.shotType || "",
+      viewpoint: screenplayShot.viewpoint || referenceShot?.viewpoint || "",
+      composition: screenplayShot.composition || referenceShot?.composition || "",
+      cameraMovement: screenplayShot.cameraMovement || referenceShot?.cameraMovement || "",
+      sceneTitle: referenceShot?.sceneTitle || scene.title,
+      screenplayText: screenplayShot.text,
+      screenplayShotNumber: screenplayShot.number
+    };
+  });
+}
+
+function parseScreenplayShots(content: string) {
+  const shotHeadingPattern = /(^|\n)(分镜\s*([0-9一二三四五六七八九十]+)\s*[｜|:：-]?\s*([^\n]*))/g;
+  const matches = Array.from(content.matchAll(shotHeadingPattern));
+  return matches.map((match, index) => {
+    const headingStart = (match.index ?? 0) + match[1].length;
+    const nextHeadingStart = index + 1 < matches.length ? matches[index + 1].index ?? content.length : content.length;
+    const fields = match[4]
+      .split(/[｜|]/)
+      .map((field) => field.trim())
+      .filter(Boolean);
+    return {
+      number: parseShotNumber(match[3]) || index + 1,
+      shotType: fields[0] ?? "",
+      viewpoint: fields[1] ?? "",
+      composition: fields[2] ?? "",
+      cameraMovement: fields[3] ?? "",
+      text: content.slice(headingStart, nextHeadingStart).trim() || match[2].trim()
+    };
+  });
+}
+
+function parseShotNumber(value: string) {
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue)) return numericValue;
+  const chineseNumbers: Record<string, number> = {
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+    十: 10
+  };
+  if (value === "十") return 10;
+  if (value.startsWith("十")) return 10 + (chineseNumbers[value.slice(1)] ?? 0);
+  if (value.endsWith("十")) return (chineseNumbers[value.slice(0, -1)] ?? 1) * 10;
+  if (value.includes("十")) {
+    const [tens, ones] = value.split("十");
+    return (chineseNumbers[tens] ?? 1) * 10 + (chineseNumbers[ones] ?? 0);
+  }
+  return chineseNumbers[value] ?? 0;
+}
+
+function createEmptyShot(scene: SceneScreenplayDraft, index: number): StoryboardShot {
+  return {
+    id: `screenplay-shot-${scene.sceneId}-${index + 1}`,
+    chapterId: "",
+    sceneTitle: scene.title,
+    eventTitle: scene.eventTitles[index] ?? "",
+    sequenceOrder: index + 1,
+    shotType: "",
+    viewpoint: "",
+    composition: "",
+    cameraMovement: "",
+    visualFocus: "",
+    emotionalPurpose: "",
+    transition: "",
+    sourceRefs: []
+  };
+}
+
+function getShotScreenplayText(shot?: StoryboardShot, scene?: SceneScreenplayDraft) {
+  return shot?.screenplayText || scene?.content || "";
 }
 
 function AssetUploadButton({ label, icon, onClick }: { label: string; icon: "image" | "video" | "audio"; onClick: () => void }) {
@@ -529,33 +882,61 @@ function AssetSection({ title, assets, onRemove }: { title: string; assets: Medi
 
 function StoryboardImageSource({
   tasks,
-  selectedTag,
-  onSelect
+  selectedTasks,
+  onToggle,
+  onRemove,
+  onClear
 }: {
   tasks: ReturnType<typeof useStoryboardImageTasks>;
-  selectedTag?: VideoTaskTag;
-  onSelect: (tag: VideoTaskTag, task: StoryboardImageTask) => void;
+  selectedTasks: StoryboardImageTask[];
+  onToggle: (task: StoryboardImageTask) => void;
+  onRemove: (taskId: string) => void;
+  onClear: () => void;
 }) {
+  const selectedTaskIds = new Set(selectedTasks.map((task) => task.id));
   return (
     <div className="asset-section">
       <div className="section-title">
         <h3>分镜图片参考</h3>
         <small>{tasks.length} 个</small>
       </div>
+      {selectedTasks.length ? (
+        <div className="selected-storyboard-reference-list">
+          <div className="section-title">
+            <strong>已导入 {selectedTasks.length} 张分镜参考</strong>
+            <button className="ghost-button danger" type="button" onClick={onClear}>
+              <Trash2 size={15} />
+              清空参考图
+            </button>
+          </div>
+          {selectedTasks.map((task, index) => (
+            <article className="selected-storyboard-reference" key={task.id}>
+              {task.imageUrl ? <img src={task.imageUrl} alt={task.title} /> : <span>暂无图片 URL</span>}
+              <div>
+                <strong>{index === 0 ? "首帧" : "参考图"}：{task.title}</strong>
+                <small>{task.shot?.label || "未关联分镜"}</small>
+              </div>
+              <button className="icon-button danger" type="button" aria-label={`移除${task.title}`} title="移除分镜图片" onClick={() => onRemove(task.id)}>
+                <Trash2 size={15} />
+              </button>
+            </article>
+          ))}
+        </div>
+      ) : null}
       {tasks.length ? (
         <div className="storyboard-reference-list">
           {tasks.map((task) => {
-            const tag = { id: task.id, label: task.title, route: "/storyboard-images" };
+            const isSelected = selectedTaskIds.has(task.id);
             return (
               <button
-                className={`storyboard-reference-card${selectedTag?.id === task.id ? " active" : ""}`}
+                className={`storyboard-reference-card${isSelected ? " active" : ""}`}
                 type="button"
                 key={task.id}
-                onClick={() => onSelect(tag, task)}
+                onClick={() => onToggle(task)}
               >
                 {task.imageUrl ? <img src={task.imageUrl} alt={task.title} /> : <span>待生成</span>}
                 <strong>{task.title}</strong>
-                <small>{task.imageUrl ? "可作为首帧" : "暂无图片 URL"} · {task.shot?.label || "未关联分镜"}</small>
+                <small>{isSelected ? "已选参考图" : task.imageUrl ? "可作为参考图" : "暂无图片 URL"} · {task.shot?.label || "未关联分镜"}</small>
               </button>
             );
           })}

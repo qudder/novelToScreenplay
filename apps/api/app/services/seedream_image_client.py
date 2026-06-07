@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 from app.core.logging_config import get_logger
 from app.core.seedance_config import seedance_config
-from app.services.generated_media_service import store_base64_image, store_remote_media
+from app.core.storage_naming import context_dir_name, document_dir_name, safe_slug, short_hash, timestamp_slug
+from app.services.generated_media_service import StoredMedia, store_base64_image, store_remote_media
 
 logger = get_logger("services.seedream_image")
 
@@ -25,6 +26,16 @@ class SeedreamImageGenerationRequest(BaseModel):
     size: str = "1920x1920"
     response_format: Literal["url", "b64_json"] = "url"
     seed: int | None = None
+    document_id: str = ""
+    filename: str = ""
+    chapter_id: str = ""
+    chapter_title: str = ""
+    scene_id: str = ""
+    scene_title: str = ""
+    shot_id: str = ""
+    shot_label: str = ""
+    frame_id: str = ""
+    frame_label: str = ""
 
 
 class SeedreamImageGenerationResult(BaseModel):
@@ -36,6 +47,7 @@ class SeedreamImageGenerationResult(BaseModel):
     local_image_path: str = ""
     b64_json: str = ""
     error_message: str = ""
+    media: dict[str, Any] = {}
     raw: dict[str, Any] = {}
 
 
@@ -43,13 +55,15 @@ class SeedreamImageClient:
     async def generate_image(self, request: SeedreamImageGenerationRequest) -> SeedreamImageGenerationResult:
         api_key = self._get_api_key()
         payload = self._build_payload(request)
-        debug_dir = _prepare_debug_dir("generate-image")
+        debug_dir = _prepare_debug_dir(request)
         _write_debug_json(debug_dir, "request.json", _redact_payload(payload))
+        _write_debug_text(debug_dir, "prompt_summary.txt", _prompt_summary(request.prompt))
         logger.info(
-            "准备提交 Seedream 分镜图片生成：模型=%s，标题=%s，尺寸=%s",
+            "准备提交 Seedream 分镜图片生成：模型=%s，标题=%s，尺寸=%s，调试目录=%s",
             _request_model(request),
             request.title or "未命名分镜图片",
             request.size,
+            debug_dir,
         )
 
         try:
@@ -63,6 +77,7 @@ class SeedreamImageClient:
                 response.raise_for_status()
         except httpx.HTTPStatusError as error:
             _write_debug_text(debug_dir, "error.txt", error.response.text)
+            _write_debug_json(debug_dir, "response.json", _response_summary(_safe_response_json(error.response)))
             logger.exception("Seedream 分镜图片生成失败：状态码=%s，标题=%s", error.response.status_code, request.title or "未命名分镜图片")
             raise RuntimeError(_extract_error_message(error.response)) from error
         except Exception as error:
@@ -70,14 +85,19 @@ class SeedreamImageClient:
             logger.exception("Seedream 分镜图片生成异常：标题=%s，错误=%s", request.title or "未命名分镜图片", error)
             raise
 
-        result = _map_image_response(response.json())
-        await _store_image_if_ready(result, request.title or result.id or "分镜图片")
+        response_payload = response.json()
+        _write_debug_json(debug_dir, "response.json", _response_summary(response_payload))
+        result = _map_image_response(response_payload)
+        stored_media = await _store_image_if_ready(result, _media_fallback_name(request, result))
+        result.media = stored_media.to_dict()
+        _write_debug_json(debug_dir, "media.json", result.media)
         logger.info(
-            "Seedream 分镜图片生成完成：状态=%s，图片URL=%s，本地路径=%s，Base64=%s",
+            "Seedream 分镜图片生成完成：状态=%s，图片URL=%s，本地路径=%s，Base64=%s，媒体有效=%s",
             result.status,
             "有" if result.image_url else "无",
             result.local_image_path or "无",
             "有" if result.b64_json else "无",
+            "是" if stored_media.valid else "否",
         )
         return result
 
@@ -108,25 +128,26 @@ class SeedreamImageClient:
         return payload
 
 
-async def _store_image_if_ready(result: SeedreamImageGenerationResult, fallback_name: str) -> None:
+async def _store_image_if_ready(result: SeedreamImageGenerationResult, fallback_name: str) -> StoredMedia:
     if result.image_url:
         stored_media = await store_remote_media(result.image_url, "images", fallback_name)
         result.original_image_url = result.image_url
         result.local_image_path = stored_media.local_path
         result.image_url = stored_media.local_url or result.image_url
         if not stored_media.local_path:
-            logger.warning("Seedream 图片未能保存到本地：标题=%s，原因=远端图片下载失败或为空", fallback_name)
-        return
+            logger.warning("Seedream 图片未能保存到本地：标题=%s，原因=%s", fallback_name, stored_media.reason or "远端图片下载失败或为空")
+        return stored_media
 
     if result.b64_json:
         stored_media = store_base64_image(result.b64_json, fallback_name)
         result.local_image_path = stored_media.local_path
         result.image_url = stored_media.local_url
         if not stored_media.local_path:
-            logger.warning("Seedream 图片未能保存到本地：标题=%s，原因=Base64 写入失败", fallback_name)
-        return
+            logger.warning("Seedream 图片未能保存到本地：标题=%s，原因=%s", fallback_name, stored_media.reason or "Base64 写入失败")
+        return stored_media
 
     logger.warning("Seedream 图片未能保存到本地：标题=%s，原因=响应缺少图片 URL 和 Base64", fallback_name)
+    return StoredMedia(reason="响应缺少图片 URL 和 Base64")
 
 
 def _map_image_response(data: dict[str, Any]) -> SeedreamImageGenerationResult:
@@ -222,11 +243,51 @@ def _extract_error_message(response: httpx.Response) -> str:
     return f"Seedream 请求失败：HTTP {response.status_code}"
 
 
-def _prepare_debug_dir(debug_context: str) -> Path:
-    safe_context = "".join(char if char.isalnum() or char in "-_" else "-" for char in debug_context)
-    debug_dir = seedance_config.debug_dir / "images" / safe_context
+def _prepare_debug_dir(request: SeedreamImageGenerationRequest) -> Path:
+    document_dir = document_dir_name(Path(request.filename).stem or "未命名小说", request.document_id or "未知文档")
+    chapter_dir = context_dir_name(request.chapter_title, request.chapter_id, "未知章节")
+    scene_dir = context_dir_name(request.scene_title, request.scene_id, "未知场景")
+    shot_dir = context_dir_name(request.shot_label or request.title, request.shot_id, "未知镜头")
+    frame_dir = f"{context_dir_name(request.frame_label, request.frame_id, '未知小分镜')}-{timestamp_slug()}"
+    debug_dir = seedance_config.seedream_debug_dir / document_dir / chapter_dir / scene_dir / shot_dir / frame_dir
     debug_dir.mkdir(parents=True, exist_ok=True)
     return debug_dir
+
+
+def _media_fallback_name(request: SeedreamImageGenerationRequest, result: SeedreamImageGenerationResult) -> str:
+    parts = [
+        safe_slug(Path(request.filename).stem, "未命名小说", 32),
+        safe_slug(request.chapter_title or request.chapter_id, "未知章节", 24),
+        safe_slug(request.scene_title, "未知场景", 32),
+        safe_slug(request.shot_label or request.title or result.id, "未知镜头", 32),
+        safe_slug(request.frame_label, "未知小分镜", 24),
+    ]
+    return "-".join(part for part in parts if part)
+
+
+def _prompt_summary(prompt: str) -> str:
+    safe_excerpt = prompt.strip().replace("\r", " ").replace("\n", " ")[:300]
+    return f"提示词字符数：{len(prompt)}\n提示词哈希：{short_hash(prompt)}\n安全摘要：{safe_excerpt}"
+
+
+def _response_summary(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": data.get("id") or data.get("task_id") or "",
+        "model": data.get("model") or "",
+        "status": data.get("status") or "",
+        "has_image_url": bool(_find_image_url(data)),
+        "has_b64_json": bool(_find_base64_image(data)),
+        "usage": data.get("usage") or {},
+        "error": data.get("error") or "",
+    }
+
+
+def _safe_response_json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except ValueError:
+        return {"error": {"message": response.text[:1000]}}
+    return data if isinstance(data, dict) else {"payload": data}
 
 
 def _write_debug_json(debug_dir: Path, filename: str, payload: Any) -> None:

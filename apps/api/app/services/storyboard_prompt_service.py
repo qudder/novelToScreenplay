@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.core.deepseek_config import deepseek_config
 from app.core.logging_config import get_logger
+from app.core.storage_naming import context_dir_name, safe_slug
 from app.services.deepseek_client import deepseek_client
 
 logger = get_logger("services.storyboard_prompt")
@@ -18,10 +19,8 @@ class StoryboardFramePromptRequest(BaseModel):
     location: str = ""
     time_of_day: str = ""
     characters: list[str] = []
-    scene_content: str = ""
     shot: dict[str, Any] = {}
     frame: dict[str, Any] = {}
-    dialogues: list[dict[str, Any]] = []
 
 
 class StoryboardFramePromptResult(BaseModel):
@@ -36,10 +35,8 @@ class StoryboardBatchPromptRequest(BaseModel):
     location: str = ""
     time_of_day: str = ""
     characters: list[str] = []
-    scene_content: str = ""
     shot: dict[str, Any] = {}
     frames: list[dict[str, Any]] = []
-    dialogues: list[dict[str, Any]] = []
 
 
 class StoryboardBatchPromptResult(BaseModel):
@@ -50,7 +47,7 @@ async def generate_storyboard_frame_prompt(payload: StoryboardFramePromptRequest
     system_prompt = deepseek_config.storyboard_image_prompt_path.read_text(encoding="utf-8")
     user_prompt = _build_frame_user_prompt(payload)
     frame_id = str(payload.frame.get("id") or "frame")
-    debug_context = f"storyboard-prompt-{payload.scene_id or 'scene'}-{frame_id}"
+    debug_context = _debug_context(payload)
     logger.info("开始生成小分镜图片提示词：场景ID=%s，小分镜=%s", payload.scene_id, frame_id)
     prompt = await deepseek_client.generate_text(
         system_prompt=system_prompt,
@@ -74,10 +71,8 @@ async def generate_storyboard_batch_prompts(payload: StoryboardBatchPromptReques
             location=payload.location,
             time_of_day=payload.time_of_day,
             characters=payload.characters,
-            scene_content=payload.scene_content,
             shot=payload.shot,
             frame=frame,
-            dialogues=payload.dialogues,
         )
         result = await generate_storyboard_frame_prompt(frame_request)
         frame_id = str(frame.get("id") or f"frame-{len(prompts) + 1}")
@@ -97,16 +92,22 @@ def _build_frame_user_prompt(payload: StoryboardFramePromptRequest) -> str:
         },
         "完整镜头信息": payload.shot,
         "目标小分镜": payload.frame,
-        "对话参考": payload.dialogues,
-        "剧本参考": payload.scene_content[:1200],
     }
     return (
         "请为目标小分镜生成黑白分镜草图提示词。\n"
-        "你可以阅读完整镜头信息和对话来理解人物关系，但输出必须只覆盖目标小分镜。\n"
-        "最终提示词只描述人物相对位置和大概场景，不追求精致成片，不要包含任何对白原文，不要生成字幕或文字。\n"
+        "只根据场景、镜头和目标小分镜信息生成，不要使用或补充任何对话信息。\n"
+        "最终提示词只描述人物相对位置和大概场景，不追求精致成片，不要包含任何对白、台词、字幕或文字。\n"
         f"{json.dumps(material, ensure_ascii=False, indent=2)}"
     )
 
 
 def _clean_prompt(prompt: str) -> str:
     return prompt.strip().strip("`").strip()
+
+
+def _debug_context(payload: StoryboardFramePromptRequest) -> str:
+    filename = safe_slug(payload.filename.rsplit(".", 1)[0], "未命名小说", 32)
+    scene = context_dir_name(payload.scene_title, payload.scene_id, "未知场景", 32)
+    shot = context_dir_name(str(payload.shot.get("sceneTitle") or payload.shot.get("eventTitle") or "镜头"), str(payload.shot.get("id") or ""), "未知镜头", 32)
+    frame = context_dir_name(str(payload.frame.get("label") or payload.frame.get("id") or "小分镜"), str(payload.frame.get("id") or ""), "未知小分镜", 24)
+    return f"storyboard-prompt-{filename}-{scene}-{shot}-{frame}"
