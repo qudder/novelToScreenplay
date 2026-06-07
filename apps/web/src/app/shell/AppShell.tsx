@@ -43,7 +43,7 @@ export function AppShell() {
         }
 
         const persistedNovel = mergeDocumentResult(currentNovel, documentResult);
-        saveCurrentNovel(persistedNovel);
+        saveCurrentNovel(persistedNovel, { source: "background-sync", preserveLibraryUpdatedAt: true });
 
         const result = await studioApi.getDocumentAnalysis(currentNovel.documentId);
         if (cancelled) {
@@ -51,7 +51,7 @@ export function AppShell() {
         }
 
         const updatedNovel = mergeAnalysisResult(persistedNovel, result);
-        saveCurrentNovel(updatedNovel);
+        saveCurrentNovel(updatedNovel, { source: "background-sync", preserveLibraryUpdatedAt: true });
 
         if (result.status === "running") {
           timer = window.setTimeout(refreshStoredAnalysis, 2000);
@@ -62,14 +62,22 @@ export function AppShell() {
     }
 
     refreshStoredAnalysis();
-    window.addEventListener("current-novel-updated", refreshStoredAnalysis);
+    function handleCurrentNovelUpdated(event: Event) {
+      const source = event instanceof CustomEvent ? event.detail?.source : undefined;
+      if (source === "background-sync") {
+        return;
+      }
+      void refreshStoredAnalysis();
+    }
+
+    window.addEventListener("current-novel-updated", handleCurrentNovelUpdated);
 
     return () => {
       cancelled = true;
       if (timer) {
         window.clearTimeout(timer);
       }
-      window.removeEventListener("current-novel-updated", refreshStoredAnalysis);
+      window.removeEventListener("current-novel-updated", handleCurrentNovelUpdated);
     };
   }, []);
 

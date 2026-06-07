@@ -2,7 +2,7 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, FileVideo, ImagePlus, KeyRound, Music, Play, Trash2, UploadCloud, Video } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
-import { getActiveNovelId, switchCurrentNovel, useCurrentNovel, useNovelLibrary } from "../../shared/currentNovel";
+import { getActiveNovelId, switchCurrentNovelFromBackend, useCurrentNovel, useNovelLibrary } from "../../shared/currentNovel";
 import { getScreenplayDraft, type SceneScreenplayDraft } from "../../shared/screenplayDraft";
 import { type StoryboardImageTask, useStoryboardImageTasks } from "../../shared/storyboardImages";
 import type { ShotPlan } from "../../shared/types";
@@ -198,8 +198,8 @@ export function VideoGenerationPage() {
     setStatusMessage("已清空当前导入的剧本内容。");
   }
 
-  function handleSwitchNovel(documentId: string) {
-    const novel = switchCurrentNovel(documentId);
+  async function handleSwitchNovel(documentId: string) {
+    const novel = await switchCurrentNovelFromBackend(documentId);
     if (novel) {
       setSelectedSceneTag(undefined);
       setSelectedChapterTag(undefined);

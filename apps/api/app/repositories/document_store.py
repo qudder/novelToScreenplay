@@ -92,6 +92,18 @@ class DocumentStore:
         self.save(record)
         return record
 
+    def list(self) -> list[DocumentRecord]:
+        records: list[tuple[float, DocumentRecord]] = []
+        for record_path in self._data_dir.glob("*/snapshot.json"):
+            try:
+                record = DocumentRecord.from_dict(json.loads(record_path.read_text(encoding="utf-8")))
+                updated_at = record_path.stat().st_mtime
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+                continue
+            self._records[record.id] = record
+            records.append((updated_at, record))
+        return [record for _, record in sorted(records, key=lambda item: item[0], reverse=True)]
+
     def save(self, record: DocumentRecord) -> None:
         record_path = self._record_path(record.id, record.filename)
         record_path.parent.mkdir(parents=True, exist_ok=True)

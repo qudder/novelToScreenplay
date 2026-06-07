@@ -66,6 +66,28 @@ type ArkModelListDto = {
   }>;
 };
 
+export type DocumentSummary = {
+  documentId: string;
+  filename: string;
+  message: string;
+  analysisStatus: "idle" | "running" | "completed" | "failed";
+  chapterCount: number;
+  characterCount: number;
+  eventCount: number;
+  sceneCount: number;
+};
+
+type DocumentSummaryDto = {
+  document_id: string;
+  filename: string;
+  message: string;
+  analysis_status: "idle" | "running" | "completed" | "failed";
+  chapter_count: number;
+  character_count: number;
+  event_count: number;
+  scene_count: number;
+};
+
 function mapSeedanceStatus(status: SeedanceTaskDto["status"]): "queued" | "running" | "completed" | "failed" {
   if (status === "succeeded") return "completed";
   if (status === "failed" || status === "expired" || status === "cancelled") return "failed";
@@ -438,6 +460,21 @@ function mapImportResult(result: ImportDocumentResult) {
   };
 }
 
+export type MappedImportResult = ReturnType<typeof mapImportResult>;
+
+function mapDocumentSummary(result: DocumentSummaryDto): DocumentSummary {
+  return {
+    documentId: result.document_id,
+    filename: result.filename,
+    message: result.message,
+    analysisStatus: result.analysis_status,
+    chapterCount: result.chapter_count,
+    characterCount: result.character_count,
+    eventCount: result.event_count,
+    sceneCount: result.scene_count
+  };
+}
+
 function mapAnalysisResult(result: AnalysisResultDto) {
   return {
     documentId: result.document_id,
@@ -512,7 +549,18 @@ export const studioApi = {
     return mapImportResult((await response.json()) as ImportDocumentResult);
   },
 
-  async getDocument(documentId: string): Promise<ReturnType<typeof mapImportResult>> {
+  async listDocuments(): Promise<DocumentSummary[]> {
+    const response = await fetch(`${API_BASE_URL}/api/documents`);
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "读取本地文档列表失败。");
+    }
+
+    return ((await response.json()) as DocumentSummaryDto[]).map(mapDocumentSummary);
+  },
+
+  async getDocument(documentId: string): Promise<MappedImportResult> {
     const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}`);
 
     if (!response.ok) {

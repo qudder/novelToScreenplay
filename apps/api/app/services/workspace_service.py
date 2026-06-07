@@ -14,6 +14,22 @@ class WorkspaceService:
     def get_workspace(self) -> Workspace:
         return memory_repository.get_workspace()
 
+    def list_documents(self) -> list[dict[str, object]]:
+        records = document_store.list()
+        return [
+            {
+                "document_id": record.id,
+                "filename": record.filename,
+                "message": record.analysis.message,
+                "analysis_status": record.analysis.status,
+                "chapter_count": len(record.chapters),
+                "character_count": len(record.analysis.characters),
+                "event_count": len(record.analysis.events),
+                "scene_count": len(record.analysis.sub_scenes) or len(record.analysis.scenes),
+            }
+            for record in records
+        ]
+
     async def import_document(self, file: UploadFile) -> ImportResult:
         content = await file.read()
         logger.info("读取上传文档：文件名=%s，字节数=%s", file.filename, len(content))
