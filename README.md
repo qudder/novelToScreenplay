@@ -4,6 +4,8 @@
 
 当前版本包含 React 前端、FastAPI 后端、共享类型契约、剧本 YAML Schema 以及多份实现规划文档，适合作为小说影视化改编流程的功能原型和后续产品迭代基础。
 
+B站介绍视频地址: https://www.bilibili.com/video/BV1mdEt6VED6?t=284.7
+
 ## 核心功能
 
 ### 小说导入与叙事分析
@@ -15,12 +17,20 @@
 - 分析结果会抽取角色、事件、关系、时间、地点、冲突、动机、行为、对话、环境、分镜规划、总场景和子场景等结构化信息。
 - 章节、事件、角色和场景保留原文定位，便于回到小说正文校验依据。
 
+![img.png](docs/images/readme/img.png)
+
 ### 角色、关系与时间线
 
 - 角色管理页展示角色卡片、别名、角色定位、重要性、出场章节和原文证据。
 - 人物关系图基于 G6 展示角色网络，节点表示人物，边表示关系类型和强度。
 - 章节/事件时间线按章节组织事件、人物出场、地点、时间和冲突点。
 - 多个页面支持点击卡片打开原文比对，减少模型抽取结果与原文脱节的问题。
+
+![img_1.png](docs/images/readme/img_1.png)
+
+![img_2.png](docs/images/readme/img_2.png)
+
+![img_3.png](docs/images/readme/img_3.png)
 
 ### 场景拆分与剧本生成
 
@@ -31,6 +41,10 @@
 - 剧本总览页统计已保存场景，支持将完整剧本导出为 YAML。
 - YAML 结构契约见 `schemas/screenplay.schema.yaml`。
 
+![img_4.png](docs/images/readme/img_4.png)
+
+![img_5.png](docs/images/readme/img_5.png)
+
 ### 分镜图片与视频任务
 
 - 分镜生图页可从剧本场景和镜头规划中选择完整镜头或单个定帧。
@@ -39,6 +53,14 @@
 - 视频生成页可导入全剧本、单场景、单镜头或单个分镜粒度的剧本文本。
 - 视频任务支持选择分镜图片作为首帧或参考图，并配置 Seedance 模型、画幅、时长、清晰度、Seed 和固定镜头运动。
 - 视频管理页同步 Seedance 任务状态，展示生成结果、本地视频文件和小说、章节、场景、镜头、分镜图片等回链标签。
+
+![img_6.png](docs/images/readme/img_6.png)
+
+![img_7.png](docs/images/readme/img_7.png)
+
+![img_8.png](docs/images/readme/img_8.png)
+
+![img_9.png](docs/images/readme/img_9.png)
 
 ### 本地存储与调试
 

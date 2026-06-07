@@ -118,14 +118,18 @@ function mapSourceRef(dto: SourceRefDto): SourceRef {
 }
 
 function mapSeedreamImageGeneration(result: SeedreamImageGenerationDto) {
+  const media = result.media ?? {};
+  const mediaLocalUrl = typeof media.local_url === "string" ? media.local_url : "";
+  const mediaLocalPath = typeof media.local_path === "string" ? media.local_path : "";
+
   return {
     providerTaskId: result.id,
     model: result.model,
     status: result.status === "succeeded" ? "completed" : result.status === "failed" ? "failed" : "running",
-    imageUrl: resolveApiAssetUrl(result.image_url),
+    imageUrl: resolveApiAssetUrl(result.image_url || mediaLocalUrl),
     originalImageUrl: result.original_image_url ?? result.image_url,
-    localImagePath: result.local_image_path ?? "",
-    media: result.media ?? {},
+    localImagePath: result.local_image_path || mediaLocalPath,
+    media,
     b64Json: result.b64_json,
     errorMessage: result.error_message
   } as const;

@@ -27,12 +27,18 @@ type GraphEdge = {
   };
 };
 
-function resolveRelationshipEndpoint(value: string, characters: Character[]) {
-  return characters.find((character) => character.id === value || character.name === value)?.id ?? value;
+function resolveRelationshipEndpoint(value: string, characterIdMap: Map<string, string>) {
+  return characterIdMap.get(value) ?? value;
 }
 
 function buildGraphData(characters: Character[], relationships: Relationship[]) {
   const nodeIds = new Set(characters.map((character) => character.id));
+  const characterIdMap = new Map<string, string>();
+  characters.forEach((character) => {
+    characterIdMap.set(character.id, character.id);
+    characterIdMap.set(character.name, character.id);
+  });
+
   const nodes: GraphNode[] = characters.map((character) => ({
     id: character.id,
     data: {
@@ -45,8 +51,8 @@ function buildGraphData(characters: Character[], relationships: Relationship[]) 
   const edgeMap = new Map<string, GraphEdge>();
 
   relationships.forEach((relationship, index) => {
-    const source = resolveRelationshipEndpoint(relationship.source, characters);
-    const target = resolveRelationshipEndpoint(relationship.target, characters);
+    const source = resolveRelationshipEndpoint(relationship.source, characterIdMap);
+    const target = resolveRelationshipEndpoint(relationship.target, characterIdMap);
     if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) return;
 
     const key = [source, target].sort().join("--");
@@ -77,6 +83,25 @@ function buildGraphData(characters: Character[], relationships: Relationship[]) 
   return { nodes, edges };
 }
 
+function buildGraphDataSignature(characters: Character[], relationships: Relationship[]) {
+  return JSON.stringify({
+    characters: characters.map((character) => [
+      character.id,
+      character.name,
+      character.role,
+      character.importance
+    ]),
+    relationships: relationships.map((relationship) => [
+      relationship.id,
+      relationship.source,
+      relationship.target,
+      relationship.type,
+      relationship.strength,
+      relationship.evidence
+    ])
+  });
+}
+
 export function RelationshipsPage() {
   const sectionRef = useEntranceAnimation<HTMLDivElement>();
   const graphContainerRef = useRef<HTMLDivElement | null>(null);
@@ -86,9 +111,13 @@ export function RelationshipsPage() {
 
   const visibleCharacters = currentNovel ? currentNovel.characters : mockCharacters;
   const visibleRelationships = currentNovel ? currentNovel.relationships : mockRelationships;
+  const graphDataSignature = useMemo(
+    () => buildGraphDataSignature(visibleCharacters, visibleRelationships),
+    [visibleCharacters, visibleRelationships]
+  );
   const graphData = useMemo(
     () => buildGraphData(visibleCharacters, visibleRelationships),
-    [visibleCharacters, visibleRelationships]
+    [graphDataSignature]
   );
 
   useEffect(() => {
@@ -151,13 +180,23 @@ export function RelationshipsPage() {
       navigate(`/characters?characterId=${encodeURIComponent(nodeId)}&from=relationships`);
     });
 
+    let resizeFrame = 0;
     const resizeObserver = new ResizeObserver(() => {
-      graph.resize();
-      graph.fitView();
+      window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = window.requestAnimationFrame(() => {
+        graph.resize();
+      });
     });
     resizeObserver.observe(graphContainerRef.current);
 
+    const fitFrame = window.requestAnimationFrame(() => {
+      graph.resize();
+      graph.fitView();
+    });
+
     return () => {
+      window.cancelAnimationFrame(resizeFrame);
+      window.cancelAnimationFrame(fitFrame);
       resizeObserver.disconnect();
       graph.destroy();
       graphRef.current = null;
