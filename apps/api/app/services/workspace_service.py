@@ -144,8 +144,8 @@ class WorkspaceService:
             return
 
         try:
-            logger.info("叙事分析开始执行：文档ID=%s，章节数=%s", document_id, len(record.chapters))
-            analysis = await analyze_chapters(record.chapters, record.source_text, force_refresh=force_refresh)
+            logger.info("叙事分析开始执行：文档ID=%s，文件名=%s，章节数=%s", document_id, record.filename, len(record.chapters))
+            analysis = await analyze_chapters(record.chapters, record.source_text, filename=record.filename, force_refresh=force_refresh)
             record.analysis = AnalysisResult(
                 document_id=document_id,
                 status="completed",

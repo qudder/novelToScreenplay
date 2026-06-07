@@ -23,6 +23,10 @@ class DeepSeekApiKeyPayload(BaseModel):
     api_key: str = Field(min_length=1)
 
 
+class SeedanceApiKeyPayload(BaseModel):
+    api_key: str = Field(min_length=1)
+
+
 class ScreenplayExportPayload(BaseModel):
     documentId: str = ""
     filename: str = ""
@@ -143,6 +147,18 @@ def get_deepseek_settings() -> dict[str, bool]:
 def save_deepseek_settings(payload: DeepSeekApiKeyPayload) -> dict[str, bool]:
     settings_service.save_deepseek_api_key(payload.api_key)
     logger.info("DeepSeek API Key 已保存：配置状态=true")
+    return {"configured": True}
+
+
+@router.get("/settings/seedance")
+def get_seedance_settings() -> dict[str, bool]:
+    return {"configured": settings_service.has_seedance_api_key()}
+
+
+@router.post("/settings/seedance")
+def save_seedance_settings(payload: SeedanceApiKeyPayload) -> dict[str, bool]:
+    settings_service.save_seedance_api_key(payload.api_key)
+    logger.info("Seedance API Key 已保存：配置状态=true")
     return {"configured": True}
 
 

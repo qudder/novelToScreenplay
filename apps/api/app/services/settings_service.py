@@ -13,15 +13,24 @@ class SettingsService:
     def has_deepseek_api_key(self) -> bool:
         return bool(os.getenv("DEEPSEEK_API_KEY", "").strip())
 
+    def has_seedance_api_key(self) -> bool:
+        return bool(os.getenv("SEEDANCE_API_KEY", "").strip())
+
     def save_deepseek_api_key(self, api_key: str) -> None:
+        self.save_api_key("DEEPSEEK_API_KEY", api_key)
+
+    def save_seedance_api_key(self, api_key: str) -> None:
+        self.save_api_key("SEEDANCE_API_KEY", api_key)
+
+    def save_api_key(self, key_name: str, api_key: str) -> None:
         cleaned_key = api_key.strip()
         self.env_path.parent.mkdir(parents=True, exist_ok=True)
 
         values = self._read_env_values()
-        values["DEEPSEEK_API_KEY"] = cleaned_key
+        values[key_name] = cleaned_key
         self._write_env_values(values)
-        os.environ["DEEPSEEK_API_KEY"] = cleaned_key
-        logger.info("DeepSeek API Key 已更新：环境文件=%s，配置状态=%s", self.env_path, bool(cleaned_key))
+        os.environ[key_name] = cleaned_key
+        logger.info("模型 API Key 已更新：配置项=%s，环境文件=%s，配置状态=%s", key_name, self.env_path, bool(cleaned_key))
 
     def _read_env_values(self) -> dict[str, str]:
         if not self.env_path.exists():
