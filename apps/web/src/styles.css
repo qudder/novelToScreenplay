@@ -491,6 +491,25 @@ button.scene-card,
   cursor: pointer;
 }
 
+.icon-button.danger,
+.ghost-button.danger {
+  border-color: #f1c6c0;
+  color: #9a3327;
+  background: #fff8f7;
+}
+
+.icon-button.danger:hover,
+.ghost-button.danger:hover {
+  border-color: #d65b4b;
+  color: #7e241b;
+  background: #fff1ef;
+}
+
+.ghost-button.danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .source-modal-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
@@ -1077,8 +1096,16 @@ button.scene-card,
   width: 100%;
 }
 
+.asset-card-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .asset-card strong,
 .asset-card small {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1119,6 +1146,174 @@ button.scene-card,
   color: #536467;
 }
 
+.video-management-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.video-task-list {
+  display: grid;
+  gap: 12px;
+}
+
+.video-management-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbe5e3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.video-management-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.video-management-header h3 {
+  margin: 4px 0 4px;
+  color: #172325;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.video-management-header span {
+  color: #2f6f73;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.video-management-card p {
+  margin: 0;
+  color: #536467;
+  line-height: 1.65;
+}
+
+.video-tag-row,
+.video-management-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.video-link-tag,
+.video-static-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #c8d8d5;
+  border-radius: 999px;
+  background: #f8fbfb;
+  color: #294144;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.video-link-tag {
+  cursor: pointer;
+}
+
+.video-link-tag:hover {
+  border-color: #2f6f73;
+  color: #173b3d;
+  background: #edf6f5;
+}
+
+.video-management-meta {
+  color: #6a7d80;
+  font-size: 12px;
+}
+
+.storyboard-image-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(340px, 1.15fr) minmax(280px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.storyboard-shot-list,
+.storyboard-reference-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.storyboard-shot-card,
+.storyboard-reference-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #dbe5e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #294144;
+  text-align: left;
+  cursor: pointer;
+}
+
+.storyboard-shot-card.active,
+.storyboard-reference-card.active {
+  border-color: #2f6f73;
+  background: #edf6f5;
+}
+
+.storyboard-shot-card strong,
+.storyboard-reference-card strong {
+  color: #172325;
+}
+
+.storyboard-shot-card span,
+.storyboard-shot-card small,
+.storyboard-reference-card small {
+  color: #6a7d80;
+  font-size: 12px;
+}
+
+.storyboard-prompt-editor {
+  min-height: 420px;
+}
+
+.storyboard-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.storyboard-image-card {
+  align-content: start;
+}
+
+.storyboard-image-preview,
+.storyboard-reference-card img,
+.storyboard-reference-card > span {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #edf3f2;
+  color: #6a7d80;
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.storyboard-image-preview img,
+.storyboard-reference-card img {
+  object-fit: cover;
+}
+
+.storyboard-reference-list {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
 @media (max-width: 920px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -1151,6 +1346,8 @@ button.scene-card,
   .screenplay-workbench,
   .overview-layout,
   .video-generation-layout,
+  .video-management-summary,
+  .storyboard-image-layout,
   .screenplay-scene-meta {
     grid-template-columns: 1fr;
   }

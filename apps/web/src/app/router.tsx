@@ -7,7 +7,10 @@ import { TimelinePage } from "../features/timeline/TimelinePage";
 import { ScenesPage } from "../features/scenes/ScenesPage";
 import { ScreenplayPage } from "../features/screenplay/ScreenplayPage";
 import { ScreenplayOverviewPage } from "../features/screenplay/ScreenplayOverviewPage";
+import { StoryboardImageGenerationPage } from "../features/video/StoryboardImageGenerationPage";
+import { StoryboardImageManagementPage } from "../features/video/StoryboardImageManagementPage";
 import { VideoGenerationPage } from "../features/video/VideoGenerationPage";
+import { VideoManagementPage } from "../features/video/VideoManagementPage";
 
 export const router = createBrowserRouter([
   {
@@ -22,7 +25,10 @@ export const router = createBrowserRouter([
       { path: "scenes", element: <ScenesPage /> },
       { path: "screenplay", element: <ScreenplayPage /> },
       { path: "screenplay-overview", element: <ScreenplayOverviewPage /> },
-      { path: "video-generation", element: <VideoGenerationPage /> }
+      { path: "storyboard-image-generation", element: <StoryboardImageGenerationPage /> },
+      { path: "storyboard-images", element: <StoryboardImageManagementPage /> },
+      { path: "video-generation", element: <VideoGenerationPage /> },
+      { path: "video-management", element: <VideoManagementPage /> }
     ]
   }
 ]);

@@ -12,6 +12,12 @@ from app.services.screenplay_generation_service import (
     ScreenplayCompletionResult,
     complete_scene_screenplay,
 )
+from app.services.seedance_client import (
+    SeedanceConfigurationError,
+    SeedanceCreateTaskRequest,
+    SeedanceTaskResult,
+    seedance_client,
+)
 from app.services.settings_service import settings_service
 from app.services.workspace_service import workspace_service
 
@@ -160,6 +166,32 @@ def save_seedance_settings(payload: SeedanceApiKeyPayload) -> dict[str, bool]:
     settings_service.save_seedance_api_key(payload.api_key)
     logger.info("Seedance API Key 已保存：配置状态=true")
     return {"configured": True}
+
+
+@router.post("/videos/seedance/tasks", response_model=SeedanceTaskResult)
+async def create_seedance_video_task(payload: SeedanceCreateTaskRequest) -> SeedanceTaskResult:
+    logger.info("收到 Seedance 视频任务创建请求：标题=%s，画幅=%s，时长=%s，清晰度=%s", payload.title, payload.ratio, payload.duration, payload.resolution)
+    try:
+        return await seedance_client.create_task(payload)
+    except SeedanceConfigurationError as error:
+        logger.warning("Seedance 视频任务创建失败：配置缺失，标题=%s", payload.title)
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Seedance 视频任务创建失败：标题=%s，错误=%s", payload.title, error)
+        raise HTTPException(status_code=502, detail=f"Seedance 视频任务创建失败：{error}") from error
+
+
+@router.get("/videos/seedance/tasks/{task_id}", response_model=SeedanceTaskResult)
+async def get_seedance_video_task(task_id: str) -> SeedanceTaskResult:
+    logger.info("收到 Seedance 视频任务查询请求：任务ID=%s", task_id)
+    try:
+        return await seedance_client.get_task(task_id)
+    except SeedanceConfigurationError as error:
+        logger.warning("Seedance 视频任务查询失败：配置缺失，任务ID=%s", task_id)
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Seedance 视频任务查询失败：任务ID=%s，错误=%s", task_id, error)
+        raise HTTPException(status_code=502, detail=f"Seedance 视频任务查询失败：{error}") from error
 
 
 @router.post("/screenplays/export")

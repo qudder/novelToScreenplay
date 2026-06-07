@@ -1,10 +1,12 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, FileVideo, ImagePlus, KeyRound, Music, Play, UploadCloud, Video } from "lucide-react";
+import { FileText, FileVideo, ImagePlus, KeyRound, Music, Play, Trash2, UploadCloud, Video } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { getActiveNovelId, switchCurrentNovel, useCurrentNovel, useNovelLibrary } from "../../shared/currentNovel";
 import { getScreenplayDraft, type SceneScreenplayDraft } from "../../shared/screenplayDraft";
+import { useStoryboardImageTasks } from "../../shared/storyboardImages";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
+import { saveVideoTask, type VideoTaskTag } from "../../shared/videoTasks";
 
 type MediaAsset = {
   id: string;
@@ -24,10 +26,13 @@ export function VideoGenerationPage() {
   const novelLibrary = useNovelLibrary();
   const activeNovelId = getActiveNovelId();
   const draft = useMemo(() => getScreenplayDraft(currentNovel?.documentId), [currentNovel?.documentId]);
+  const storyboardImageTasks = useStoryboardImageTasks();
+  const relatedStoryboardImages = storyboardImageTasks.filter((task) => !currentNovel?.documentId || task.novel?.id === currentNovel.documentId);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const screenplayInputRef = useRef<HTMLInputElement | null>(null);
+  const assetsRef = useRef<MediaAsset[]>([]);
 
   const [apiKey, setApiKey] = useState("");
   const [isKeyConfigured, setIsKeyConfigured] = useState(false);
@@ -42,7 +47,11 @@ export function VideoGenerationPage() {
   const [resolution, setResolution] = useState("1080p");
   const [seed, setSeed] = useState("");
   const [cameraFixed, setCameraFixed] = useState(false);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [statusMessage, setStatusMessage] = useState("配置素材和剧本后，可创建 Seedance 视频生成任务。");
+  const [selectedSceneTag, setSelectedSceneTag] = useState<VideoTaskTag | undefined>(undefined);
+  const [selectedChapterTag, setSelectedChapterTag] = useState<VideoTaskTag | undefined>(undefined);
+  const [selectedStoryboardImageTag, setSelectedStoryboardImageTag] = useState<VideoTaskTag | undefined>(undefined);
 
   useEffect(() => {
     setScreenplayText(buildScreenplayText(draft));
@@ -58,6 +67,14 @@ export function VideoGenerationPage() {
       .catch(() => {
         setKeyStatusMessage("无法读取 Seedance 配置状态。");
       });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      assetsRef.current.forEach((asset) => {
+        if (asset.url) URL.revokeObjectURL(asset.url);
+      });
+    };
   }, []);
 
   async function handleSaveApiKey() {
@@ -91,7 +108,11 @@ export function VideoGenerationPage() {
       size: file.size,
       url: type === "image" || type === "video" || type === "audio" ? URL.createObjectURL(file) : undefined
     }));
-    setAssets((current) => [...nextAssets, ...current]);
+    setAssets((current) => {
+      const updatedAssets = [...nextAssets, ...current];
+      assetsRef.current = updatedAssets;
+      return updatedAssets;
+    });
 
     if (type === "screenplay") {
       const file = files[0];
@@ -100,9 +121,33 @@ export function VideoGenerationPage() {
     event.target.value = "";
   }
 
+  function handleRemoveAsset(assetId: string) {
+    setAssets((current) => {
+      const removedAsset = current.find((asset) => asset.id === assetId);
+      if (removedAsset?.url) URL.revokeObjectURL(removedAsset.url);
+      const updatedAssets = current.filter((asset) => asset.id !== assetId);
+      assetsRef.current = updatedAssets;
+      return updatedAssets;
+    });
+    setStatusMessage("已删除导入素材。");
+  }
+
+  function handleClearScreenplay() {
+    setScreenplayText("");
+    setAssets((current) => {
+      const updatedAssets = current.filter((asset) => asset.type !== "screenplay");
+      assetsRef.current = updatedAssets;
+      return updatedAssets;
+    });
+    setStatusMessage("已清空当前导入的剧本内容。");
+  }
+
   function handleSwitchNovel(documentId: string) {
     const novel = switchCurrentNovel(documentId);
     if (novel) {
+      setSelectedSceneTag(undefined);
+      setSelectedChapterTag(undefined);
+      setSelectedStoryboardImageTag(undefined);
       setStatusMessage(`已切换到《${novel.filename}》，可导入该小说的章节剧本。`);
       return;
     }
@@ -116,16 +161,20 @@ export function VideoGenerationPage() {
       return;
     }
     setScreenplayText(text);
+    setSelectedSceneTag(undefined);
+    setSelectedChapterTag(undefined);
     setStatusMessage(`已导入《${draft?.filename ?? currentNovel?.filename ?? "当前小说"}》的完整剧本。`);
   }
 
   function handleImportSceneDraft(scene: SceneScreenplayDraft, index: number) {
     setScreenplayText(buildSceneScreenplayText(scene, index));
+    setSelectedChapterTag({ id: scene.blockId, label: scene.blockTitle || "未命名章节/总场景", route: "/scenes" });
+    setSelectedSceneTag({ id: scene.sceneId, label: scene.title || `场景 ${index + 1}`, route: "/screenplay" });
     setPrompt(`根据当前章节/场景剧本生成电影感镜头，突出“${scene.title}”的场面调度、人物行动、环境氛围和视角转换。`);
     setStatusMessage(`已导入章节剧本：${scene.title}`);
   }
 
-  function handleCreateTask() {
+  async function handleCreateTask() {
     if (!isKeyConfigured) {
       setStatusMessage("请先配置 Seedance API Key。");
       return;
@@ -134,7 +183,62 @@ export function VideoGenerationPage() {
       setStatusMessage("请先导入或填写剧本内容。");
       return;
     }
-    setStatusMessage("已生成任务草案：接口接入时将提交 Seedance 视频生成任务并轮询状态。");
+    const seedValue = seed.trim() ? Number(seed.trim()) : undefined;
+    if (seedValue !== undefined && (!Number.isInteger(seedValue) || seedValue < 0)) {
+      setStatusMessage("Seed 必须是非负整数，留空则由 Seedance 随机生成。");
+      return;
+    }
+    const now = new Date().toISOString();
+    const taskTitle = selectedSceneTag?.label || currentNovel?.filename || "未命名视频任务";
+    setIsCreatingTask(true);
+    setStatusMessage("正在提交 Seedance 视频生成任务...");
+    try {
+      const result = await studioApi.createSeedanceVideoTask({
+        title: taskTitle,
+        prompt,
+        negativePrompt,
+        screenplayText,
+        ratio,
+        duration: Number(duration),
+        resolution,
+        seed: seedValue,
+        cameraFixed
+      });
+      saveVideoTask({
+        id: `video-task-${Date.now()}`,
+        providerTaskId: result.providerTaskId,
+        title: taskTitle,
+        status: result.status,
+        model: result.model || "Seedance",
+        ratio,
+        duration,
+        resolution,
+        prompt,
+        negativePrompt,
+        screenplayPreview: screenplayText.slice(0, 180),
+        screenplayLength: screenplayText.length,
+        assetCounts: {
+          images: imageAssets.length,
+          videos: videoAssets.length,
+          audios: audioAssets.length
+        },
+        novel: currentNovel?.documentId
+          ? { id: currentNovel.documentId, label: currentNovel.filename, route: "/import" }
+          : undefined,
+      chapter: selectedChapterTag,
+      scene: selectedSceneTag,
+      storyboardImage: selectedStoryboardImageTag,
+      videoUrl: result.videoUrl,
+        errorMessage: result.errorMessage,
+        createdAt: now,
+        updatedAt: new Date().toISOString()
+      });
+      setStatusMessage(`Seedance 视频任务已提交：任务ID=${result.providerTaskId}，当前状态=${formatSeedanceStatus(result.status)}。`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "创建 Seedance 视频任务失败。");
+    } finally {
+      setIsCreatingTask(false);
+    }
   }
 
   const imageAssets = assets.filter((asset) => asset.type === "image");
@@ -217,6 +321,10 @@ export function VideoGenerationPage() {
               <UploadCloud size={16} />
               从文件导入剧本
             </button>
+            <button className="ghost-button danger" type="button" disabled={!screenplayText.trim()} onClick={handleClearScreenplay}>
+              <Trash2 size={16} />
+              清空剧本
+            </button>
           </div>
           <textarea className="video-script-editor" value={screenplayText} onChange={(event) => setScreenplayText(event.target.value)} />
           <label className="field-label">
@@ -243,9 +351,17 @@ export function VideoGenerationPage() {
           <input ref={videoInputRef} className="visually-hidden" type="file" accept="video/*" multiple onChange={(event) => handleAssetChange(event, "video")} />
           <input ref={audioInputRef} className="visually-hidden" type="file" accept="audio/*" multiple onChange={(event) => handleAssetChange(event, "audio")} />
 
-          <AssetSection title="图片参考" assets={imageAssets} />
-          <AssetSection title="视频参考" assets={videoAssets} />
-          <AssetSection title="音频参考" assets={audioAssets} />
+          <AssetSection title="图片参考" assets={imageAssets} onRemove={handleRemoveAsset} />
+          <StoryboardImageSource
+            tasks={relatedStoryboardImages}
+            selectedTag={selectedStoryboardImageTag}
+            onSelect={(tag) => {
+              setSelectedStoryboardImageTag(tag);
+              setStatusMessage(`已选择分镜图片参考：${tag.label}`);
+            }}
+          />
+          <AssetSection title="视频参考" assets={videoAssets} onRemove={handleRemoveAsset} />
+          <AssetSection title="音频参考" assets={audioAssets} onRemove={handleRemoveAsset} />
         </section>
 
         <aside className="panel animate-in video-settings-panel">
@@ -291,9 +407,9 @@ export function VideoGenerationPage() {
             <p>
               素材：{imageAssets.length} 图 · {videoAssets.length} 视频 · {audioAssets.length} 音频
             </p>
-            <button className="primary-button" type="button" onClick={handleCreateTask}>
+            <button className="primary-button" type="button" disabled={isCreatingTask} onClick={handleCreateTask}>
               <Play size={16} />
-              创建视频任务
+              {isCreatingTask ? "提交中..." : "创建视频任务"}
             </button>
             <small>{statusMessage}</small>
           </div>
@@ -329,7 +445,7 @@ function AssetUploadButton({ label, icon, onClick }: { label: string; icon: "ima
   );
 }
 
-function AssetSection({ title, assets }: { title: string; assets: MediaAsset[] }) {
+function AssetSection({ title, assets, onRemove }: { title: string; assets: MediaAsset[]; onRemove: (assetId: string) => void }) {
   return (
     <div className="asset-section">
       <div className="section-title">
@@ -343,8 +459,15 @@ function AssetSection({ title, assets }: { title: string; assets: MediaAsset[] }
               {asset.type === "image" && asset.url ? <img src={asset.url} alt={asset.name} /> : null}
               {asset.type === "video" && asset.url ? <video src={asset.url} controls /> : null}
               {asset.type === "audio" && asset.url ? <audio src={asset.url} controls /> : null}
-              <strong>{asset.name}</strong>
-              <small>{formatFileSize(asset.size)}</small>
+              <div className="asset-card-footer">
+                <div>
+                  <strong>{asset.name}</strong>
+                  <small>{formatFileSize(asset.size)}</small>
+                </div>
+                <button className="icon-button danger" type="button" aria-label={`删除${asset.name}`} title="删除素材" onClick={() => onRemove(asset.id)}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
             </article>
           ))}
         </div>
@@ -352,6 +475,49 @@ function AssetSection({ title, assets }: { title: string; assets: MediaAsset[] }
         <article className="compact-card">
           <strong>暂无素材</strong>
           <p>导入素材后会在这里展示预览。</p>
+        </article>
+      )}
+    </div>
+  );
+}
+
+function StoryboardImageSource({
+  tasks,
+  selectedTag,
+  onSelect
+}: {
+  tasks: ReturnType<typeof useStoryboardImageTasks>;
+  selectedTag?: VideoTaskTag;
+  onSelect: (tag: VideoTaskTag) => void;
+}) {
+  return (
+    <div className="asset-section">
+      <div className="section-title">
+        <h3>分镜图片参考</h3>
+        <small>{tasks.length} 个</small>
+      </div>
+      {tasks.length ? (
+        <div className="storyboard-reference-list">
+          {tasks.map((task) => {
+            const tag = { id: task.id, label: task.title, route: "/storyboard-images" };
+            return (
+              <button
+                className={`storyboard-reference-card${selectedTag?.id === task.id ? " active" : ""}`}
+                type="button"
+                key={task.id}
+                onClick={() => onSelect(tag)}
+              >
+                {task.imageUrl ? <img src={task.imageUrl} alt={task.title} /> : <span>待生成</span>}
+                <strong>{task.title}</strong>
+                <small>{task.shot?.label || "未关联分镜"}</small>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <article className="compact-card">
+          <strong>暂无分镜图片</strong>
+          <p>可先进入分镜生图页，为当前小说生成参考图片任务。</p>
         </article>
       )}
     </div>
@@ -377,4 +543,15 @@ function SelectField({ label, value, options, suffix, onChange }: { label: strin
 function formatFileSize(size: number) {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatSeedanceStatus(status: "draft" | "queued" | "running" | "completed" | "failed") {
+  const statusMap = {
+    draft: "草稿",
+    queued: "排队中",
+    running: "生成中",
+    completed: "已完成",
+    failed: "失败"
+  };
+  return statusMap[status];
 }
