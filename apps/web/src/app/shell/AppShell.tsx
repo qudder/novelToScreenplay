@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { BookOpen, Clapperboard, FileText, GitBranch, Layers, Upload, Users } from "lucide-react";
+import { BookOpen, Clapperboard, FileText, Film, GitBranch, Layers, Upload, Users } from "lucide-react";
 import { studioApi } from "../../shared/api";
 import { getCurrentNovel, saveCurrentNovel } from "../../shared/currentNovel";
 import type { CurrentNovel } from "../../shared/types";
@@ -12,7 +12,8 @@ const navItems = [
   { to: "/timeline", label: "事件时间线", icon: BookOpen },
   { to: "/scenes", label: "场景拆分板", icon: Layers },
   { to: "/screenplay", label: "剧本生成", icon: Clapperboard },
-  { to: "/screenplay-overview", label: "剧本总览", icon: FileText }
+  { to: "/screenplay-overview", label: "剧本总览", icon: FileText },
+  { to: "/video-generation", label: "视频生成", icon: Film }
 ];
 
 export function AppShell() {

@@ -85,12 +85,17 @@ class AggregatedAnalysis:
         return sorted(merged.values(), key=lambda item: item.importance, reverse=True)
 
 
-async def analyze_chapters(chapters: list[Chapter], source_text: str, force_refresh: bool = False) -> AggregatedAnalysis:
+async def analyze_chapters(chapters: list[Chapter], source_text: str, filename: str = "untitled", force_refresh: bool = False) -> AggregatedAnalysis:
     deepseek_config.cache_dir.mkdir(parents=True, exist_ok=True)
     semaphore = asyncio.Semaphore(deepseek_config.max_concurrent_chapter_requests)
-    logger.info("开始分发章节叙事分析：章节数=%s，最大并发=%s", len(chapters), deepseek_config.max_concurrent_chapter_requests)
+    logger.info(
+        "开始分发章节叙事分析：文件名=%s，章节数=%s，最大并发=%s",
+        filename,
+        len(chapters),
+        deepseek_config.max_concurrent_chapter_requests,
+    )
     analyses = await asyncio.gather(
-        *[_analyze_single_chapter(chapter, source_text, semaphore, force_refresh=force_refresh) for chapter in chapters]
+        *[_analyze_single_chapter(chapter, source_text, semaphore, filename=filename, force_refresh=force_refresh) for chapter in chapters]
     )
 
     aggregated = AggregatedAnalysis(list(analyses))
@@ -104,10 +109,11 @@ async def _analyze_single_chapter(
     chapter: Chapter,
     source_text: str,
     semaphore: asyncio.Semaphore,
+    filename: str = "untitled",
     force_refresh: bool = False,
 ) -> ChapterAnalysis:
     chapter_text = _chapter_text(chapter, source_text)
-    cache_path = _chapter_cache_path(chapter, chapter_text)
+    cache_path = _chapter_cache_path(chapter, chapter_text, filename)
 
     if force_refresh and cache_path.exists():
         logger.info("已请求强制刷新，章节叙事分析缓存将被忽略：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
@@ -133,15 +139,22 @@ async def _analyze_single_chapter(
 
     async with semaphore:
         user_prompt = _build_user_prompt(chapter, chapter_text)
-        debug_dir = _chapter_debug_dir(chapter, chapter_text)
+        debug_dir = _chapter_debug_dir(chapter, chapter_text, filename)
         debug_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("请求章节叙事分析：章节ID=%s，标题=%s，正文字符数=%s，调试目录=%s", chapter.id, chapter.title, len(chapter_text), debug_dir)
+        logger.info(
+            "请求章节叙事分析：文件名=%s，章节ID=%s，标题=%s，正文字符数=%s，调试目录=%s",
+            filename,
+            chapter.id,
+            chapter.title,
+            len(chapter_text),
+            debug_dir,
+        )
         (debug_dir / "user_prompt.md").write_text(user_prompt, encoding="utf-8")
         (debug_dir / "chapter_text.txt").write_text(chapter_text, encoding="utf-8")
         try:
             payload = await deepseek_client.extract_json(
                 user_prompt,
-                debug_context=f"{chapter.id}-{_chapter_cache_key(chapter, chapter_text)[:12]}",
+                debug_context=_chapter_debug_name(chapter, chapter_text, filename),
             )
         except Exception as error:
             (debug_dir / "chapter_error.txt").write_text(repr(error), encoding="utf-8")
@@ -160,12 +173,22 @@ def _chapter_cache_key(chapter: Chapter, chapter_text: str) -> str:
     return digest
 
 
-def _chapter_cache_path(chapter: Chapter, chapter_text: str) -> Path:
-    return deepseek_config.cache_dir / f"{_chapter_cache_key(chapter, chapter_text)}.json"
+def _chapter_cache_path(chapter: Chapter, chapter_text: str, filename: str) -> Path:
+    return deepseek_config.cache_dir / f"{_chapter_debug_name(chapter, chapter_text, filename)}.json"
 
 
-def _chapter_debug_dir(chapter: Chapter, chapter_text: str) -> Path:
-    return deepseek_config.debug_dir / f"{chapter.id}-{_chapter_cache_key(chapter, chapter_text)[:12]}"
+def _chapter_debug_dir(chapter: Chapter, chapter_text: str, filename: str) -> Path:
+    return deepseek_config.debug_dir / _chapter_debug_name(chapter, chapter_text, filename)
+
+
+def _chapter_debug_name(chapter: Chapter, chapter_text: str, filename: str) -> str:
+    return f"{_safe_path_part(Path(filename).stem)}-{chapter.id}-{_chapter_cache_key(chapter, chapter_text)[:12]}"
+
+
+def _safe_path_part(value: str, max_length: int = 48) -> str:
+    safe_value = "".join(char if char.isalnum() or char in "-_" else "-" for char in value.strip())
+    safe_value = "-".join(part for part in safe_value.split("-") if part)
+    return (safe_value or "untitled")[:max_length]
 
 
 def _build_user_prompt(chapter: Chapter, chapter_text: str) -> str:

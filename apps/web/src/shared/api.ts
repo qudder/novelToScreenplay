@@ -598,6 +598,32 @@ export const studioApi = {
     return (await response.json()) as { configured: boolean };
   },
 
+  async getSeedanceSettings(): Promise<{ configured: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/settings/seedance`);
+    if (!response.ok) {
+      throw new Error("读取 Seedance 配置失败。");
+    }
+
+    return (await response.json()) as { configured: boolean };
+  },
+
+  async saveSeedanceApiKey(apiKey: string): Promise<{ configured: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/settings/seedance`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ api_key: apiKey })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "保存 Seedance API Key 失败。");
+    }
+
+    return (await response.json()) as { configured: boolean };
+  },
+
   async exportScreenplay(draft: ScreenplayDraft): Promise<string> {
     const response = await fetch(`${API_BASE_URL}/api/screenplays/export`, {
       method: "POST",

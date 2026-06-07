@@ -7,6 +7,7 @@ import { TimelinePage } from "../features/timeline/TimelinePage";
 import { ScenesPage } from "../features/scenes/ScenesPage";
 import { ScreenplayPage } from "../features/screenplay/ScreenplayPage";
 import { ScreenplayOverviewPage } from "../features/screenplay/ScreenplayOverviewPage";
+import { VideoGenerationPage } from "../features/video/VideoGenerationPage";
 
 export const router = createBrowserRouter([
   {
@@ -20,7 +21,8 @@ export const router = createBrowserRouter([
       { path: "timeline", element: <TimelinePage /> },
       { path: "scenes", element: <ScenesPage /> },
       { path: "screenplay", element: <ScreenplayPage /> },
-      { path: "screenplay-overview", element: <ScreenplayOverviewPage /> }
+      { path: "screenplay-overview", element: <ScreenplayOverviewPage /> },
+      { path: "video-generation", element: <VideoGenerationPage /> }
     ]
   }
 ]);
