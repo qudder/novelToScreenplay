@@ -66,10 +66,6 @@ export function ImportPage() {
     scenes: importedNovel?.subScenes?.length || importedNovel?.scenes.length || 0
   });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [apiKey, setApiKey] = useState("");
-  const [isKeyConfigured, setIsKeyConfigured] = useState(false);
-  const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 DeepSeek 配置...");
-  const [isSavingKey, setIsSavingKey] = useState(false);
   const [comparePayload, setComparePayload] = useState<ComparePayload | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState("");
   const activeNovelId = getActiveNovelId();
@@ -106,39 +102,6 @@ export function ImportPage() {
       scenes: importedNovel.subScenes?.length || importedNovel.scenes.length
     });
   }, [importedNovel]);
-
-  useEffect(() => {
-    studioApi
-      .getDeepSeekSettings()
-      .then((settings) => {
-        setIsKeyConfigured(settings.configured);
-        setKeyStatusMessage(settings.configured ? "DeepSeek API Key 已配置。" : "DeepSeek API Key 尚未配置。");
-      })
-      .catch(() => {
-        setKeyStatusMessage("无法读取 DeepSeek 配置状态。");
-      });
-  }, []);
-
-  async function handleSaveApiKey() {
-    if (!apiKey.trim()) {
-      setKeyStatusMessage("请输入 DeepSeek API Key。");
-      return;
-    }
-
-    setIsSavingKey(true);
-    setKeyStatusMessage("正在保存 DeepSeek API Key...");
-
-    try {
-      const result = await studioApi.saveDeepSeekApiKey(apiKey);
-      setIsKeyConfigured(result.configured);
-      setApiKey("");
-      setKeyStatusMessage("DeepSeek API Key 已保存到本地后端。");
-    } catch (error) {
-      setKeyStatusMessage(error instanceof Error ? error.message : "保存失败。");
-    } finally {
-      setIsSavingKey(false);
-    }
-  }
 
   async function handleSwitchNovel(targetDocumentId: string) {
     const nextNovel = await switchCurrentNovelFromBackend(targetDocumentId);
@@ -348,19 +311,7 @@ export function ImportPage() {
               <KeyRound size={18} />
               <h2>DeepSeek 配置</h2>
             </div>
-            <div className="api-key-row">
-              <input
-                className="text-input"
-                type="password"
-                value={apiKey}
-                placeholder={isKeyConfigured ? "已配置，可输入新 key 覆盖" : "输入 DeepSeek API Key"}
-                onChange={(event) => setApiKey(event.target.value)}
-              />
-              <button className="ghost-button" type="button" disabled={isSavingKey} onClick={handleSaveApiKey}>
-                {isSavingKey ? "保存中..." : "保存"}
-              </button>
-            </div>
-            <small className={isKeyConfigured ? "status-ok" : "status-warn"}>{keyStatusMessage}</small>
+            <p className="muted-line">API Key 已统一迁移到系统设置页管理，叙事分析会直接读取本地后端配置。</p>
           </div>
 
           <div className="upload-zone">

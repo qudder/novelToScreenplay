@@ -3,18 +3,11 @@ import { ChevronLeft, ChevronRight, ImagePlus, KeyRound, Sparkles } from "lucide
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { useCurrentNovel } from "../../shared/currentNovel";
+import { imageProviderOptions, imageProviders, isValidImageSize, type ImageProviderId } from "../../shared/imageProviders";
 import { getScreenplayDraft, type SceneScreenplayDraft } from "../../shared/screenplayDraft";
 import { saveStoryboardImageTask } from "../../shared/storyboardImages";
 import type { ShotPlan } from "../../shared/types";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
-
-const imageModelOptions = [
-  "doubao-seedream-5-0-260128",
-  "doubao-seedream-4-0-250828",
-  "doubao-seedream-3-0-t2i-250415"
-];
-const minimumSeedreamPixels = 3686400;
-const imageSizeOptions = ["1920x1920", "2560x1440", "1440x2560", "2048x2048", "2816x1600", "1600x2816"];
 
 export function StoryboardImageGenerationPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
@@ -33,16 +26,16 @@ export function StoryboardImageGenerationPage() {
   );
   const [selectedFrameId, setSelectedFrameId] = useState("composition");
   const selectedFrame = selectedShot ? getShotFrames(selectedShot).find((frame) => frame.id === selectedFrameId) ?? getShotFrames(selectedShot)[0] : undefined;
-  const [apiKey, setApiKey] = useState("");
+  const [imageProvider, setImageProvider] = useState<ImageProviderId>("seedream");
+  const providerConfig = imageProviders[imageProvider];
   const [isKeyConfigured, setIsKeyConfigured] = useState(false);
-  const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 Seedance 配置...");
-  const [isSavingKey, setIsSavingKey] = useState(false);
+  const [keyStatusMessage, setKeyStatusMessage] = useState(`正在读取 ${providerConfig.keyName} 配置...`);
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("黑白线稿、粗略草图、低细节框架图、简化轮廓图、文字、字幕、对白、旁白、水印、画面畸变");
-  const [model, setModel] = useState(imageModelOptions[0]);
-  const [availableModels, setAvailableModels] = useState(imageModelOptions);
+  const [model, setModel] = useState(providerConfig.defaultModel);
+  const [availableModels, setAvailableModels] = useState(providerConfig.defaultModels);
   const [customModel, setCustomModel] = useState("");
-  const [size, setSize] = useState(imageSizeOptions[0]);
+  const [size, setSize] = useState(providerConfig.imageSizeOptions[0]);
   const [seed, setSeed] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
@@ -50,7 +43,7 @@ export function StoryboardImageGenerationPage() {
   const [shotPrompts, setShotPrompts] = useState<Record<string, string>>({});
   const [promptTarget, setPromptTarget] = useState<PromptTarget>({ type: "frame" });
   const [expandedShotId, setExpandedShotId] = useState("");
-  const [statusMessage, setStatusMessage] = useState("选择场景和分镜后，可调用 Seedream 生成分镜图片。");
+  const [statusMessage, setStatusMessage] = useState("选择场景和分镜后，可调用图片模型生成分镜图片。");
 
   useEffect(() => {
     if (!selectedSceneId && scenes[0]) {
@@ -76,58 +69,52 @@ export function StoryboardImageGenerationPage() {
   }, [selectedScene?.sceneId, selectedShot?.id, selectedFrame?.id, framePrompts, shotPrompts, promptTarget.type]);
 
   useEffect(() => {
-    studioApi
-      .getSeedanceSettings()
+    let isCancelled = false;
+    setAvailableModels(providerConfig.defaultModels);
+    setModel(providerConfig.defaultModel);
+    setSize(providerConfig.imageSizeOptions[0]);
+    setCustomModel("");
+    setKeyStatusMessage(`正在读取 ${providerConfig.keyName} 配置...`);
+    providerConfig
+      .getSettings()
       .then((settings) => {
+        if (isCancelled) return;
         setIsKeyConfigured(settings.configured);
-        setKeyStatusMessage(settings.configured ? "Seedance API Key 已配置。" : "Seedance API Key 尚未配置。");
-        if (settings.configured) {
-          refreshModelOptions();
+        setKeyStatusMessage(settings.configured ? `${providerConfig.keyName} 已配置。` : `${providerConfig.keyName} 尚未配置。`);
+        if (settings.configured && providerConfig.supportsModelList) {
+          refreshModelOptions(imageProvider, () => isCancelled);
         }
       })
       .catch(() => {
-        setKeyStatusMessage("无法读取 Seedance 配置状态。");
+        if (isCancelled) return;
+        setIsKeyConfigured(false);
+        setKeyStatusMessage(`无法读取 ${providerConfig.keyName} 配置状态。`);
       });
-  }, []);
+    return () => {
+      isCancelled = true;
+    };
+  }, [imageProvider]);
 
-  async function handleSaveApiKey() {
-    if (!apiKey.trim()) {
-      setKeyStatusMessage("请输入 Seedance API Key。");
-      return;
-    }
-
-    setIsSavingKey(true);
-    setKeyStatusMessage("正在保存 Seedance API Key...");
+  async function refreshModelOptions(providerId: ImageProviderId = imageProvider, isCancelled: () => boolean = () => false) {
     try {
-      const result = await studioApi.saveSeedanceApiKey(apiKey);
-      setIsKeyConfigured(result.configured);
-      setApiKey("");
-      setKeyStatusMessage("Seedance API Key 已保存到本地后端。");
-      await refreshModelOptions();
-    } catch (error) {
-      setKeyStatusMessage(error instanceof Error ? error.message : "保存失败。");
-    } finally {
-      setIsSavingKey(false);
-    }
-  }
-
-  async function refreshModelOptions() {
-    try {
+      if (!imageProviders[providerId].supportsModelList) return;
       const models = await studioApi.getSeedanceModels();
       const matchedModels = models.map((item) => item.id).filter((id) => id.toLowerCase().includes("seedream"));
       const nextModels = matchedModels.length ? matchedModels : models.map((item) => item.id);
+      if (isCancelled()) return;
       if (!nextModels.length) return;
       setAvailableModels(nextModels);
       setModel((current) => (nextModels.includes(current) ? current : nextModels[0]));
       setKeyStatusMessage(`已读取可用图片模型：${nextModels.length} 个。`);
     } catch (error) {
+      if (isCancelled()) return;
       setKeyStatusMessage(error instanceof Error ? error.message : "读取可用模型失败，可使用自定义模型。");
     }
   }
 
   async function handleCreateStoryboardImageTask() {
     if (!isKeyConfigured) {
-      setStatusMessage("请先配置 Seedance API Key。");
+      setStatusMessage(`请先配置 ${providerConfig.keyName}。`);
       return;
     }
     if (!currentNovel || !selectedScene || !selectedShot || (promptTarget.type === "frame" && !selectedFrame)) {
@@ -138,13 +125,13 @@ export function StoryboardImageGenerationPage() {
       setStatusMessage("请先填写分镜图片提示词。");
       return;
     }
-    if (!isValidSeedreamSize(size)) {
-      setStatusMessage("图片尺寸过小。当前 Seedream 模型要求总像素至少 3,686,400，请选择更大的尺寸。");
+    if (!isValidImageSize(size, providerConfig.minimumPixels)) {
+      setStatusMessage(`${providerConfig.label} 图片尺寸过小，请选择更大的尺寸。`);
       return;
     }
     const seedValue = seed.trim() ? Number(seed.trim()) : undefined;
     if (seedValue !== undefined && (!Number.isInteger(seedValue) || seedValue < 0)) {
-      setStatusMessage("Seed 必须是非负整数，留空则由 Seedream 随机生成。");
+      setStatusMessage(`Seed 必须是非负整数，留空则由 ${providerConfig.label} 随机生成。`);
       return;
     }
 
@@ -170,9 +157,10 @@ export function StoryboardImageGenerationPage() {
     };
 
     setIsGenerating(true);
-    setStatusMessage("正在调用 Seedream 生成分镜图片...");
+    setStatusMessage(`正在调用 ${providerConfig.label} 生成分镜图片...`);
     try {
       const result = await studioApi.createSeedreamImageGeneration({
+        provider: imageProvider,
         title,
         model: selectedModel,
         prompt,
@@ -439,23 +427,21 @@ export function StoryboardImageGenerationPage() {
           <aside className="panel animate-in">
             <div className="section-title">
               <KeyRound size={18} />
-              <h2>Seedance 配置</h2>
-            </div>
-            <div className="api-key-row">
-              <input
-                className="text-input"
-                type="password"
-                value={apiKey}
-                placeholder={isKeyConfigured ? "已配置，可输入新 key 覆盖" : "输入 Seedance API Key"}
-                onChange={(event) => setApiKey(event.target.value)}
-              />
-              <button className="ghost-button" type="button" disabled={isSavingKey} onClick={handleSaveApiKey}>
-                {isSavingKey ? "保存中..." : "保存"}
-              </button>
+              <h2>图片模型配置</h2>
             </div>
             <small className={isKeyConfigured ? "status-ok" : "status-warn"}>{keyStatusMessage}</small>
             <div className="video-task-card">
               <strong>分镜图片任务</strong>
+              <label className="field-label">
+                图片提供方
+                <select className="text-input" value={imageProvider} onChange={(event) => setImageProvider(event.target.value as ImageProviderId)}>
+                  {imageProviderOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <p>模型：{customModel.trim() || model}</p>
               <p>小说：{currentNovel.filename}</p>
               <p>场景：{selectedScene?.title || "未选择"}</p>
@@ -478,7 +464,7 @@ export function StoryboardImageGenerationPage() {
               <label className="field-label">
                 图片尺寸
                 <select className="text-input" value={size} onChange={(event) => setSize(event.target.value)}>
-                  {imageSizeOptions.map((option) => (
+                  {providerConfig.imageSizeOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -606,11 +592,6 @@ function framePromptKeyFor(shot?: StoryboardShot, frame?: ShotFrame) {
 
 function shotPromptKeyFor(shot?: StoryboardShot) {
   return shot ? `${shot.id}:shot` : "";
-}
-
-function isValidSeedreamSize(size: string) {
-  const [width, height] = size.split("x").map((value) => Number(value));
-  return Number.isFinite(width) && Number.isFinite(height) && width * height >= minimumSeedreamPixels;
 }
 
 function buildWholeShotFrame(shot: StoryboardShot): ShotFrame {

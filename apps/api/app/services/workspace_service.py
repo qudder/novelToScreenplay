@@ -159,28 +159,33 @@ class WorkspaceService:
             message=record.analysis.message,
         )
 
-    def restart_analysis(self, document_id: str) -> AnalysisStartResult | None:
+    def restart_analysis(self, document_id: str) -> tuple[AnalysisStartResult, bool] | None:
         record = document_store.get(document_id)
         if not record:
             return None
 
         pending_chapter_ids = _pending_chapter_ids(record)
+        resume_incomplete = bool(pending_chapter_ids)
         record.analysis.status = "running"
-        if pending_chapter_ids and len(pending_chapter_ids) < len(record.chapters):
+        if resume_incomplete:
             record.analysis.message = f"正在继续分析未完成章节：{len(pending_chapter_ids)} / {len(record.chapters)}。"
         else:
-            record.analysis.message = "叙事分析正在运行。"
+            record.analysis.message = "正在重新执行叙事分析。"
         document_store.save(record)
         logger.info(
-            "已请求重新执行叙事分析：文档ID=%s，章节数=%s，待分析章节数=%s",
+            "已请求重新执行叙事分析：文档ID=%s，章节数=%s，待补章节数=%s，执行模式=%s",
             document_id,
             len(record.chapters),
-            len(pending_chapter_ids) or len(record.chapters),
+            len(pending_chapter_ids),
+            "续跑待补章节" if resume_incomplete else "全量重新分析",
         )
-        return AnalysisStartResult(
-            document_id=document_id,
-            status="running",
-            message=record.analysis.message,
+        return (
+            AnalysisStartResult(
+                document_id=document_id,
+                status="running",
+                message=record.analysis.message,
+            ),
+            resume_incomplete,
         )
 
     async def run_analysis(self, document_id: str, force_refresh: bool = False, resume_incomplete: bool = False) -> None:

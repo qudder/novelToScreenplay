@@ -166,6 +166,35 @@ function mapCharacter(dto: CharacterDto): Character {
     role: dto.role,
     description: dto.description,
     appearances: dto.appearances,
+    costumes: (dto.costumes ?? []).map(mapCharacterCostume),
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
+  };
+}
+
+function mapCharacterCostume(dto: NonNullable<CharacterDto["costumes"]>[number]) {
+  return {
+    chapterId: dto.chapter_id,
+    sceneTitle: dto.scene_title,
+    clothing: dto.clothing,
+    accessories: dto.accessories ?? [],
+    makeup: dto.makeup,
+    colorPalette: dto.color_palette,
+    condition: dto.condition,
+    sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
+  };
+}
+
+function mapSceneInfo(dto?: SceneDto["scene_info"]): Scene["sceneInfo"] {
+  if (!dto) return undefined;
+  return {
+    locationDetails: dto.location_details,
+    timeText: dto.time_text,
+    weather: dto.weather,
+    light: dto.light,
+    sound: dto.sound,
+    atmosphere: dto.atmosphere,
+    props: dto.props ?? [],
+    visualDetails: dto.visual_details ?? [],
     sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
   };
 }
@@ -247,6 +276,7 @@ function mapScene(dto: SceneDto): Scene {
     eventTitles: dto.event_titles,
     characters: dto.characters,
     adaptationNote: dto.adaptation_note,
+    sceneInfo: mapSceneInfo(dto.scene_info),
     sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
   };
 }
@@ -287,6 +317,7 @@ function mapSubScene(dto: SubSceneDto): SubScene {
     conflictIds: dto.conflict_ids,
     characters: dto.characters,
     characterIds: dto.character_ids,
+    sceneInfo: mapSceneInfo(dto.scene_info),
     sourceRefs: (dto.source_refs ?? []).map(mapSourceRef)
   };
 }
@@ -313,7 +344,36 @@ function toCharacterDto(character: Character): CharacterDto {
     role: character.role,
     description: character.description,
     appearances: character.appearances,
+    costumes: (character.costumes ?? []).map(toCharacterCostumeDto),
     source_refs: (character.sourceRefs ?? []).map(toSourceRefDto)
+  };
+}
+
+function toCharacterCostumeDto(costume: NonNullable<Character["costumes"]>[number]) {
+  return {
+    chapter_id: costume.chapterId,
+    scene_title: costume.sceneTitle,
+    clothing: costume.clothing,
+    accessories: costume.accessories ?? [],
+    makeup: costume.makeup,
+    color_palette: costume.colorPalette,
+    condition: costume.condition,
+    source_refs: (costume.sourceRefs ?? []).map(toSourceRefDto)
+  };
+}
+
+function toSceneInfoDto(sceneInfo: Scene["sceneInfo"]): SceneDto["scene_info"] {
+  if (!sceneInfo) return undefined;
+  return {
+    location_details: sceneInfo.locationDetails,
+    time_text: sceneInfo.timeText,
+    weather: sceneInfo.weather,
+    light: sceneInfo.light,
+    sound: sceneInfo.sound,
+    atmosphere: sceneInfo.atmosphere,
+    props: sceneInfo.props ?? [],
+    visual_details: sceneInfo.visualDetails ?? [],
+    source_refs: (sceneInfo.sourceRefs ?? []).map(toSourceRefDto)
   };
 }
 
@@ -394,6 +454,7 @@ function toSceneDto(scene: Scene): SceneDto {
     event_titles: scene.eventTitles ?? [],
     characters: scene.characters ?? [],
     adaptation_note: scene.adaptationNote ?? "",
+    scene_info: toSceneInfoDto(scene.sceneInfo),
     source_refs: (scene.sourceRefs ?? []).map(toSourceRefDto)
   };
 }
@@ -434,6 +495,7 @@ function toSubSceneDto(subScene: SubScene): SubSceneDto {
     conflict_ids: subScene.conflictIds,
     characters: subScene.characters,
     character_ids: subScene.characterIds,
+    scene_info: toSceneInfoDto(subScene.sceneInfo),
     source_refs: (subScene.sourceRefs ?? []).map(toSourceRefDto)
   };
 }
@@ -760,6 +822,32 @@ export const studioApi = {
     return (await response.json()) as { configured: boolean };
   },
 
+  async getRightCodeSettings(): Promise<{ configured: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/settings/rightcode`);
+    if (!response.ok) {
+      throw new Error("读取 Right Code 配置失败。");
+    }
+
+    return (await response.json()) as { configured: boolean };
+  },
+
+  async saveRightCodeApiKey(apiKey: string): Promise<{ configured: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/settings/rightcode`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ api_key: apiKey })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "保存 Right Code API Key 失败。");
+    }
+
+    return (await response.json()) as { configured: boolean };
+  },
+
   async getSeedanceModels(): Promise<ArkModelListDto["models"]> {
     const response = await fetch(`${API_BASE_URL}/api/settings/seedance/models`);
     if (!response.ok) {
@@ -828,10 +916,12 @@ export const studioApi = {
   },
 
   async createSeedreamImageGeneration(payload: {
+    provider?: "seedream" | "rightcode";
     title: string;
     model: string;
     prompt: string;
     negativePrompt: string;
+    referenceImageUrls?: string[];
     size: string;
     seed?: number;
     documentId?: string;
@@ -851,10 +941,12 @@ export const studioApi = {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
+        provider: payload.provider ?? "seedream",
         title: payload.title,
         model: payload.model,
         prompt: payload.prompt,
         negative_prompt: payload.negativePrompt,
+        reference_image_urls: payload.referenceImageUrls ?? [],
         size: payload.size,
         seed: payload.seed,
         response_format: "b64_json",
@@ -945,6 +1037,41 @@ export const studioApi = {
 
     const result = (await response.json()) as { prompts: Record<string, string> };
     return result.prompts;
+  },
+
+  async generateCharacterImagePrompt(payload: {
+    documentId: string;
+    filename: string;
+    character: Character;
+    template?: "single" | "identity-board";
+    draftPrompt?: string;
+  }): Promise<string> {
+    const response = await fetch(`${API_BASE_URL}/api/character-prompts/image`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        document_id: payload.documentId,
+        filename: payload.filename,
+        character_id: payload.character.id,
+        name: payload.character.name,
+        role: payload.character.role,
+        description: payload.character.description,
+        aliases: payload.character.aliases,
+        appearances: payload.character.appearances,
+        template: payload.template ?? "single",
+        draft_prompt: payload.draftPrompt ?? ""
+      })
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "生成角色图片提示词失败。");
+    }
+
+    const result = (await response.json()) as { prompt: string };
+    return result.prompt;
   },
 
   async exportScreenplay(draft: ScreenplayDraft): Promise<string> {

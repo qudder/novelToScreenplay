@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getCurrentNovel } from "./currentNovel";
 
 const STORAGE_KEY = "novel-to-screenplay.videoTasks";
 const TRASH_RETENTION_DAYS = 7;
@@ -69,8 +70,9 @@ function getAllVideoTasks(): VideoTask[] {
 }
 
 export function saveVideoTask(task: VideoTask) {
-  const tasks = getAllVideoTasks().filter((item) => item.id !== task.id);
-  writeTasks([task, ...tasks]);
+  const taggedTask = ensureVideoTaskNovelTag(task);
+  const tasks = getAllVideoTasks().filter((item) => item.id !== taggedTask.id);
+  writeTasks([taggedTask, ...tasks]);
 }
 
 export function updateVideoTask(taskId: string, patch: Partial<VideoTask>) {
@@ -123,18 +125,20 @@ export function deleteVideoTaskPermanently(taskId: string) {
 }
 
 export function useVideoTasks() {
-  const [tasks, setTasks] = useState<VideoTask[]>(() => getVideoTasks());
+  const [tasks, setTasks] = useState<VideoTask[]>(() => getCurrentNovelVideoTasks());
 
   const refresh = useCallback(() => {
-    setTasks(getVideoTasks());
+    setTasks(getCurrentNovelVideoTasks());
   }, []);
 
   useEffect(() => {
     window.addEventListener("storage", refresh);
+    window.addEventListener("current-novel-updated", refresh);
     window.addEventListener("video-tasks-updated", refresh);
 
     return () => {
       window.removeEventListener("storage", refresh);
+      window.removeEventListener("current-novel-updated", refresh);
       window.removeEventListener("video-tasks-updated", refresh);
     };
   }, [refresh]);
@@ -143,18 +147,20 @@ export function useVideoTasks() {
 }
 
 export function useDeletedVideoTasks() {
-  const [tasks, setTasks] = useState<VideoTask[]>(() => getDeletedVideoTasks());
+  const [tasks, setTasks] = useState<VideoTask[]>(() => getCurrentNovelDeletedVideoTasks());
 
   const refresh = useCallback(() => {
-    setTasks(getDeletedVideoTasks());
+    setTasks(getCurrentNovelDeletedVideoTasks());
   }, []);
 
   useEffect(() => {
     window.addEventListener("storage", refresh);
+    window.addEventListener("current-novel-updated", refresh);
     window.addEventListener("video-tasks-updated", refresh);
 
     return () => {
       window.removeEventListener("storage", refresh);
+      window.removeEventListener("current-novel-updated", refresh);
       window.removeEventListener("video-tasks-updated", refresh);
     };
   }, [refresh]);
@@ -165,6 +171,34 @@ export function useDeletedVideoTasks() {
 function purgeExpiredTasks(tasks: VideoTask[]) {
   const now = Date.now();
   return tasks.filter((task) => !task.expiresAt || new Date(task.expiresAt).getTime() > now);
+}
+
+function getCurrentNovelVideoTasks() {
+  return filterTasksForCurrentNovel(getVideoTasks());
+}
+
+function getCurrentNovelDeletedVideoTasks() {
+  return filterTasksForCurrentNovel(getDeletedVideoTasks());
+}
+
+function filterTasksForCurrentNovel(tasks: VideoTask[]) {
+  const currentNovel = getCurrentNovel();
+  if (!currentNovel?.documentId) return [];
+  return tasks.filter((task) => task.novel?.id === currentNovel.documentId);
+}
+
+function ensureVideoTaskNovelTag(task: VideoTask): VideoTask {
+  if (task.novel) return task;
+  const currentNovel = getCurrentNovel();
+  if (!currentNovel?.documentId) return task;
+  return {
+    ...task,
+    novel: {
+      id: currentNovel.documentId,
+      label: currentNovel.filename,
+      route: "/import"
+    }
+  };
 }
 
 function writeTasks(tasks: VideoTask[]) {

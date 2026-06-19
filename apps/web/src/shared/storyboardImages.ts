@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getCurrentNovel } from "./currentNovel";
 import type { VideoTaskTag } from "./videoTasks";
 
 const STORAGE_KEY = "novel-to-screenplay.storyboardImages";
@@ -53,8 +54,9 @@ function getAllStoryboardImageTasks(): StoryboardImageTask[] {
 }
 
 export function saveStoryboardImageTask(task: StoryboardImageTask) {
-  const tasks = getAllStoryboardImageTasks().filter((item) => item.id !== task.id);
-  writeTasks([task, ...tasks]);
+  const taggedTask = ensureStoryboardImageNovelTag(task);
+  const tasks = getAllStoryboardImageTasks().filter((item) => item.id !== taggedTask.id);
+  writeTasks([taggedTask, ...tasks]);
 }
 
 export function moveStoryboardImageTaskToTrash(taskId: string) {
@@ -93,18 +95,20 @@ export function deleteStoryboardImageTaskPermanently(taskId: string) {
 }
 
 export function useStoryboardImageTasks() {
-  const [tasks, setTasks] = useState<StoryboardImageTask[]>(() => getStoryboardImageTasks());
+  const [tasks, setTasks] = useState<StoryboardImageTask[]>(() => getCurrentNovelStoryboardImageTasks());
 
   const refresh = useCallback(() => {
-    setTasks(getStoryboardImageTasks());
+    setTasks(getCurrentNovelStoryboardImageTasks());
   }, []);
 
   useEffect(() => {
     window.addEventListener("storage", refresh);
+    window.addEventListener("current-novel-updated", refresh);
     window.addEventListener("storyboard-images-updated", refresh);
 
     return () => {
       window.removeEventListener("storage", refresh);
+      window.removeEventListener("current-novel-updated", refresh);
       window.removeEventListener("storyboard-images-updated", refresh);
     };
   }, [refresh]);
@@ -113,18 +117,20 @@ export function useStoryboardImageTasks() {
 }
 
 export function useDeletedStoryboardImageTasks() {
-  const [tasks, setTasks] = useState<StoryboardImageTask[]>(() => getDeletedStoryboardImageTasks());
+  const [tasks, setTasks] = useState<StoryboardImageTask[]>(() => getCurrentNovelDeletedStoryboardImageTasks());
 
   const refresh = useCallback(() => {
-    setTasks(getDeletedStoryboardImageTasks());
+    setTasks(getCurrentNovelDeletedStoryboardImageTasks());
   }, []);
 
   useEffect(() => {
     window.addEventListener("storage", refresh);
+    window.addEventListener("current-novel-updated", refresh);
     window.addEventListener("storyboard-images-updated", refresh);
 
     return () => {
       window.removeEventListener("storage", refresh);
+      window.removeEventListener("current-novel-updated", refresh);
       window.removeEventListener("storyboard-images-updated", refresh);
     };
   }, [refresh]);
@@ -135,6 +141,34 @@ export function useDeletedStoryboardImageTasks() {
 function purgeExpiredTasks(tasks: StoryboardImageTask[]) {
   const now = Date.now();
   return tasks.filter((task) => !task.expiresAt || new Date(task.expiresAt).getTime() > now);
+}
+
+function getCurrentNovelStoryboardImageTasks() {
+  return filterTasksForCurrentNovel(getStoryboardImageTasks());
+}
+
+function getCurrentNovelDeletedStoryboardImageTasks() {
+  return filterTasksForCurrentNovel(getDeletedStoryboardImageTasks());
+}
+
+function filterTasksForCurrentNovel(tasks: StoryboardImageTask[]) {
+  const currentNovel = getCurrentNovel();
+  if (!currentNovel?.documentId) return [];
+  return tasks.filter((task) => task.novel?.id === currentNovel.documentId);
+}
+
+function ensureStoryboardImageNovelTag(task: StoryboardImageTask): StoryboardImageTask {
+  if (task.novel) return task;
+  const currentNovel = getCurrentNovel();
+  if (!currentNovel?.documentId) return task;
+  return {
+    ...task,
+    novel: {
+      id: currentNovel.documentId,
+      label: currentNovel.filename,
+      route: "/import"
+    }
+  };
 }
 
 function writeTasks(tasks: StoryboardImageTask[]) {

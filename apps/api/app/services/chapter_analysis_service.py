@@ -12,6 +12,7 @@ from app.domain.models import (
     Chapter,
     ChapterAnalysis,
     Character,
+    CharacterCostume,
     Conflict,
     Dialogue,
     EmotionArc,
@@ -22,6 +23,7 @@ from app.domain.models import (
     NarrativeBlock,
     Relationship,
     Scene,
+    SceneInfo,
     ShotPlan,
     SourceRef,
     SubScene,
@@ -30,7 +32,7 @@ from app.domain.models import (
 from app.services.deepseek_client import deepseek_client
 
 logger = get_logger("services.chapter_analysis")
-CACHE_SCHEMA_VERSION = "chapter-analysis-v5-shot-plans"
+CACHE_SCHEMA_VERSION = "chapter-analysis-v6-costumes-scene-info"
 
 
 class _RefreshChapterCache(RuntimeError):
@@ -75,6 +77,7 @@ class AggregatedAnalysis:
                 if existing:
                     existing.aliases = sorted(set(existing.aliases + character.aliases))
                     existing.appearances = sorted(set(existing.appearances + character.appearances))
+                    existing.costumes = _merge_costumes(existing.costumes + character.costumes)
                     existing.source_refs = _merge_source_refs(existing.source_refs + character.source_refs)
                     existing.importance = max(existing.importance, character.importance)
                     if character.description and character.description not in existing.description:
@@ -279,6 +282,20 @@ def _parse_character(item: dict[str, Any], chapter_id: str) -> Character:
         role=_text(item.get("role")) or "candidate",
         description=_text(item.get("description")),
         appearances=sorted(set(_text(value) for value in appearances if _text(value))),
+        costumes=[_parse_character_costume(costume, chapter_id) for costume in item.get("costumes", []) if isinstance(costume, dict)],
+        source_refs=_source_refs(chapter_id, item),
+    )
+
+
+def _parse_character_costume(item: dict[str, Any], chapter_id: str) -> CharacterCostume:
+    return CharacterCostume(
+        chapter_id=_text(item.get("chapter_id")) or chapter_id,
+        scene_title=_text(item.get("scene_title")),
+        clothing=_text(item.get("clothing")),
+        accessories=[_text(value) for value in item.get("accessories", []) if _text(value)],
+        makeup=_text(item.get("makeup")),
+        color_palette=_text(item.get("color_palette")),
+        condition=_text(item.get("condition")),
         source_refs=_source_refs(chapter_id, item),
     )
 
@@ -432,6 +449,7 @@ def _parse_scene(item: dict[str, Any]) -> Scene:
         event_titles=[_text(value) for value in item.get("event_titles", []) if _text(value)],
         characters=[_text(value) for value in item.get("characters", []) if _text(value)],
         adaptation_note=_text(item.get("adaptation_note")),
+        scene_info=_parse_scene_info(item.get("scene_info", {}), chapter_id),
         source_refs=_source_refs(chapter_id, item),
     )
 
@@ -468,6 +486,23 @@ def _parse_sub_scene(item: dict[str, Any], chapter_id: str) -> SubScene:
         action_ids=[_text(value) for value in item.get("action_ids", []) if _text(value)],
         conflict_ids=[_text(value) for value in item.get("conflict_ids", []) if _text(value)],
         characters=[_text(value) for value in item.get("characters", []) if _text(value)],
+        scene_info=_parse_scene_info(item.get("scene_info", {}), _text(item.get("chapter_id")) or chapter_id),
+        source_refs=_source_refs(chapter_id, item),
+    )
+
+
+def _parse_scene_info(item: Any, chapter_id: str) -> SceneInfo:
+    if not isinstance(item, dict):
+        return SceneInfo()
+    return SceneInfo(
+        location_details=_text(item.get("location_details")),
+        time_text=_text(item.get("time_text")),
+        weather=_text(item.get("weather")),
+        light=_text(item.get("light")),
+        sound=_text(item.get("sound")),
+        atmosphere=_text(item.get("atmosphere")),
+        props=[_text(value) for value in item.get("props", []) if _text(value)],
+        visual_details=[_text(value) for value in item.get("visual_details", []) if _text(value)],
         source_refs=_source_refs(chapter_id, item),
     )
 
@@ -528,6 +563,7 @@ def _attach_event_and_scene_ids(analysis: AggregatedAnalysis) -> None:
     for scene in analysis.scenes:
         scene.character_ids = [name_to_character_id[name] for name in scene.characters if name in name_to_character_id]
         scene.event_ids = [title_to_event_id[title] for title in scene.event_titles if title in title_to_event_id]
+        _attach_scene_info(scene.scene_info, scene.title, scene.event_titles, analysis.environments)
         for event_title in scene.event_titles:
             environment_id = title_to_environment_id.get(event_title)
             if environment_id:
@@ -546,6 +582,7 @@ def _attach_event_and_scene_ids(analysis: AggregatedAnalysis) -> None:
         sub_scene.environment_ids = _unique(
             sub_scene.environment_ids + [environment_id for event in related_events for environment_id in event.environment_ids]
         )
+        _attach_scene_info(sub_scene.scene_info, sub_scene.title, sub_scene.event_titles, analysis.environments)
         sub_scene.shot_ids = _unique(
             sub_scene.shot_ids
             + [
@@ -623,13 +660,48 @@ def _fallback_sub_scene_from_scene(scene: Scene) -> SubScene:
         event_titles=scene.event_titles,
         event_ids=scene.event_ids,
         characters=scene.characters,
+        scene_info=scene.scene_info,
         source_refs=scene.source_refs,
+    )
+
+
+def _attach_scene_info(scene_info: SceneInfo, scene_title: str, event_titles: list[str], environments: list[EnvironmentInfo]) -> None:
+    matched_environments = [
+        environment
+        for environment in environments
+        if environment.scene_title == scene_title
+        or environment.scene_title in event_titles
+        or any(event_title in environment.event_titles for event_title in event_titles)
+    ]
+    if not matched_environments:
+        return
+
+    if not scene_info.location_details:
+        scene_info.location_details = "；".join(_unique([environment.location for environment in matched_environments if environment.location]))
+    if not scene_info.time_text:
+        scene_info.time_text = "；".join(_unique([environment.time_text for environment in matched_environments if environment.time_text]))
+    if not scene_info.weather:
+        scene_info.weather = "；".join(_unique([environment.weather for environment in matched_environments if environment.weather]))
+    if not scene_info.light:
+        scene_info.light = "；".join(_unique([environment.light for environment in matched_environments if environment.light]))
+    if not scene_info.sound:
+        scene_info.sound = "；".join(_unique([environment.sound for environment in matched_environments if environment.sound]))
+    if not scene_info.atmosphere:
+        scene_info.atmosphere = "；".join(_unique([environment.atmosphere for environment in matched_environments if environment.atmosphere]))
+    scene_info.props = _unique(scene_info.props + [prop for environment in matched_environments for prop in environment.props])
+    scene_info.visual_details = _unique(
+        scene_info.visual_details + [detail for environment in matched_environments for detail in environment.visual_details]
+    )
+    scene_info.source_refs = _merge_source_refs(
+        scene_info.source_refs + [ref for environment in matched_environments for ref in environment.source_refs]
     )
 
 
 def _attach_source_positions(analysis: ChapterAnalysis, chapter_text: str, chapter_start_char: int) -> None:
     for character in analysis.characters:
         _locate_refs(character.source_refs, chapter_text, chapter_start_char)
+        for costume in character.costumes:
+            _locate_refs(costume.source_refs, chapter_text, chapter_start_char)
     for event in analysis.events:
         _locate_refs(event.source_refs, chapter_text, chapter_start_char)
     for environment in analysis.environments:
@@ -640,10 +712,12 @@ def _attach_source_positions(analysis: ChapterAnalysis, chapter_text: str, chapt
         _locate_refs(dialogue.source_refs, chapter_text, chapter_start_char)
     for scene in analysis.scene_candidates:
         _locate_refs(scene.source_refs, chapter_text, chapter_start_char)
+        _locate_refs(scene.scene_info.source_refs, chapter_text, chapter_start_char)
     for block in analysis.narrative_blocks:
         _locate_refs(block.source_refs, chapter_text, chapter_start_char)
     for sub_scene in analysis.sub_scenes:
         _locate_refs(sub_scene.source_refs, chapter_text, chapter_start_char)
+        _locate_refs(sub_scene.scene_info.source_refs, chapter_text, chapter_start_char)
 
 
 def _locate_refs(refs: list[SourceRef], chapter_text: str, chapter_start_char: int) -> None:
@@ -785,6 +859,22 @@ def _merge_source_refs(refs: list[SourceRef]) -> list[SourceRef]:
         key = (ref.chapter_id, ref.evidence)
         if key not in merged:
             merged[key] = ref
+    return list(merged.values())
+
+
+def _merge_costumes(costumes: list[CharacterCostume]) -> list[CharacterCostume]:
+    merged: dict[tuple[str, str, str], CharacterCostume] = {}
+    for costume in costumes:
+        key = (costume.chapter_id, costume.scene_title, costume.clothing)
+        if key not in merged:
+            merged[key] = costume
+            continue
+        existing = merged[key]
+        existing.accessories = _unique(existing.accessories + costume.accessories)
+        existing.makeup = existing.makeup or costume.makeup
+        existing.color_palette = existing.color_palette or costume.color_palette
+        existing.condition = existing.condition or costume.condition
+        existing.source_refs = _merge_source_refs(existing.source_refs + costume.source_refs)
     return list(merged.values())
 
 

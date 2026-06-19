@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { BookOpen, Clapperboard, FileImage, FileText, Film, GitBranch, ImagePlus, Layers, ListVideo, Upload, Users } from "lucide-react";
+import { BookOpen, Clapperboard, FileImage, FileText, Film, GitBranch, ImagePlus, Layers, ListVideo, Settings, Upload, Users } from "lucide-react";
 import { studioApi } from "../../shared/api";
 import { getCurrentNovel, saveCurrentNovel } from "../../shared/currentNovel";
 import type { CurrentNovel } from "../../shared/types";
@@ -16,7 +16,8 @@ const navItems = [
   { to: "/storyboard-image-generation", label: "分镜生图", icon: ImagePlus },
   { to: "/storyboard-images", label: "分镜管理", icon: FileImage },
   { to: "/video-generation", label: "视频生成", icon: Film },
-  { to: "/video-management", label: "视频管理", icon: ListVideo }
+  { to: "/video-management", label: "视频管理", icon: ListVideo },
+  { to: "/settings", label: "系统设置", icon: Settings }
 ];
 
 export function AppShell() {
@@ -109,7 +110,6 @@ export function AppShell() {
     </div>
   );
 }
-
 async function getOrRestoreDocument(currentNovel: CurrentNovel) {
   try {
     return await studioApi.getDocument(currentNovel.documentId ?? "");
@@ -189,3 +189,4 @@ function mergeDocumentResult(
     subScenes: result.subScenes
   };
 }
+

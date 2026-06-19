@@ -16,11 +16,17 @@ class SettingsService:
     def has_seedance_api_key(self) -> bool:
         return bool(os.getenv("SEEDANCE_API_KEY", "").strip())
 
+    def has_rightcode_api_key(self) -> bool:
+        return bool(os.getenv("RIGHTCODE_API_KEY", "").strip())
+
     def save_deepseek_api_key(self, api_key: str) -> None:
         self.save_api_key("DEEPSEEK_API_KEY", api_key)
 
     def save_seedance_api_key(self, api_key: str) -> None:
         self.save_api_key("SEEDANCE_API_KEY", api_key)
+
+    def save_rightcode_api_key(self, api_key: str) -> None:
+        self.save_api_key("RIGHTCODE_API_KEY", api_key)
 
     def save_api_key(self, key_name: str, api_key: str) -> None:
         cleaned_key = api_key.strip()

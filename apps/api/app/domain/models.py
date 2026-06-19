@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Chapter(BaseModel):
@@ -21,6 +21,29 @@ class SourceRef(BaseModel):
     evidence: str = ""
 
 
+class CharacterCostume(BaseModel):
+    chapter_id: str = ""
+    scene_title: str = ""
+    clothing: str = ""
+    accessories: list[str] = []
+    makeup: str = ""
+    color_palette: str = ""
+    condition: str = ""
+    source_refs: list[SourceRef] = []
+
+
+class SceneInfo(BaseModel):
+    location_details: str = ""
+    time_text: str = ""
+    weather: str = ""
+    light: str = ""
+    sound: str = ""
+    atmosphere: str = ""
+    props: list[str] = []
+    visual_details: list[str] = []
+    source_refs: list[SourceRef] = []
+
+
 class Character(BaseModel):
     id: str
     name: str
@@ -29,6 +52,7 @@ class Character(BaseModel):
     role: str
     description: str
     appearances: list[str]
+    costumes: list[CharacterCostume] = []
     source_refs: list[SourceRef] = []
 
 
@@ -68,6 +92,7 @@ class Scene(BaseModel):
     event_titles: list[str] = []
     characters: list[str] = []
     adaptation_note: str = ""
+    scene_info: SceneInfo = Field(default_factory=SceneInfo)
     source_refs: list[SourceRef] = []
 
 
@@ -104,6 +129,7 @@ class SubScene(BaseModel):
     conflict_ids: list[str] = []
     characters: list[str] = []
     character_ids: list[str] = []
+    scene_info: SceneInfo = Field(default_factory=SceneInfo)
     source_refs: list[SourceRef] = []
 
 

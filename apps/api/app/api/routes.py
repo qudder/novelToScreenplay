@@ -26,10 +26,13 @@ from app.services.seedream_image_client import (
     seedream_image_client,
 )
 from app.services.storyboard_prompt_service import (
+    CharacterImagePromptRequest,
+    CharacterImagePromptResult,
     StoryboardBatchPromptRequest,
     StoryboardBatchPromptResult,
     StoryboardFramePromptRequest,
     StoryboardFramePromptResult,
+    generate_character_image_prompt,
     generate_storyboard_batch_prompts,
     generate_storyboard_frame_prompt,
 )
@@ -45,6 +48,10 @@ class DeepSeekApiKeyPayload(BaseModel):
 
 
 class SeedanceApiKeyPayload(BaseModel):
+    api_key: str = Field(min_length=1)
+
+
+class RightCodeApiKeyPayload(BaseModel):
     api_key: str = Field(min_length=1)
 
 
@@ -177,12 +184,13 @@ def start_document_analysis(document_id: str, background_tasks: BackgroundTasks)
 
 @router.post("/documents/{document_id}/analysis/retry", response_model=AnalysisStartResult)
 def retry_document_analysis(document_id: str, background_tasks: BackgroundTasks) -> AnalysisStartResult:
-    result = workspace_service.restart_analysis(document_id)
-    if not result:
+    restart_result = workspace_service.restart_analysis(document_id)
+    if not restart_result:
         logger.warning("重试叙事分析失败：文档ID=%s", document_id)
         raise HTTPException(status_code=404, detail="文档不存在。")
 
-    background_tasks.add_task(workspace_service.run_analysis, document_id, False, True)
+    result, resume_incomplete = restart_result
+    background_tasks.add_task(workspace_service.run_analysis, document_id, not resume_incomplete, resume_incomplete)
     return result
 
 
@@ -207,6 +215,18 @@ def get_seedance_settings() -> dict[str, bool]:
 def save_seedance_settings(payload: SeedanceApiKeyPayload) -> dict[str, bool]:
     settings_service.save_seedance_api_key(payload.api_key)
     logger.info("Seedance API Key 已保存：配置状态=true")
+    return {"configured": True}
+
+
+@router.get("/settings/rightcode")
+def get_rightcode_settings() -> dict[str, bool]:
+    return {"configured": settings_service.has_rightcode_api_key()}
+
+
+@router.post("/settings/rightcode")
+def save_rightcode_settings(payload: RightCodeApiKeyPayload) -> dict[str, bool]:
+    settings_service.save_rightcode_api_key(payload.api_key)
+    logger.info("Right Code API Key 已保存：配置状态=true")
     return {"configured": True}
 
 
@@ -251,15 +271,16 @@ async def get_seedance_video_task(task_id: str) -> SeedanceTaskResult:
 
 @router.post("/images/seedream/generations", response_model=SeedreamImageGenerationResult)
 async def create_seedream_image_generation(payload: SeedreamImageGenerationRequest) -> SeedreamImageGenerationResult:
-    logger.info("收到 Seedream 分镜图片生成请求：标题=%s，尺寸=%s", payload.title, payload.size)
+    provider_name = "Right Code" if payload.provider == "rightcode" else "Seedream"
+    logger.info("收到图片生成请求：提供方=%s，标题=%s，尺寸=%s", provider_name, payload.title, payload.size)
     try:
         return await seedream_image_client.generate_image(payload)
     except SeedreamImageConfigurationError as error:
-        logger.warning("Seedream 分镜图片生成失败：配置缺失，标题=%s", payload.title)
+        logger.warning("%s 图片生成失败：配置缺失，标题=%s", provider_name, payload.title)
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
-        logger.exception("Seedream 分镜图片生成失败：标题=%s，错误=%s", payload.title, error)
-        raise HTTPException(status_code=502, detail=f"Seedream 分镜图片生成失败：{error}") from error
+        logger.exception("%s 图片生成失败：标题=%s，错误=%s", provider_name, payload.title, error)
+        raise HTTPException(status_code=502, detail=f"{provider_name} 图片生成失败：{error}") from error
 
 
 @router.post("/storyboard-prompts/frame", response_model=StoryboardFramePromptResult)
@@ -286,6 +307,19 @@ async def create_storyboard_batch_prompts(payload: StoryboardBatchPromptRequest)
     except Exception as error:
         logger.exception("批量小分镜图片提示词生成失败：场景ID=%s，错误=%s", payload.scene_id, error)
         raise HTTPException(status_code=500, detail=f"批量小分镜图片提示词生成失败：{error}") from error
+
+
+@router.post("/character-prompts/image", response_model=CharacterImagePromptResult)
+async def create_character_image_prompt(payload: CharacterImagePromptRequest) -> CharacterImagePromptResult:
+    logger.info("收到角色图片提示词生成请求：角色ID=%s，姓名=%s", payload.character_id, payload.name)
+    try:
+        return await generate_character_image_prompt(payload)
+    except DeepSeekConfigurationError as error:
+        logger.warning("角色图片提示词生成失败：DeepSeek 配置缺失，角色ID=%s", payload.character_id)
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("角色图片提示词生成失败：角色ID=%s，错误=%s", payload.character_id, error)
+        raise HTTPException(status_code=500, detail=f"角色图片提示词生成失败：{error}") from error
 
 
 @router.post("/screenplays/export")
