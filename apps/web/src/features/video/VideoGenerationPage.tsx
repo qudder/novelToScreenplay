@@ -65,10 +65,8 @@ export function VideoGenerationPage() {
   const screenplayInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MediaAsset[]>([]);
 
-  const [apiKey, setApiKey] = useState("");
   const [isKeyConfigured, setIsKeyConfigured] = useState(false);
   const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 Seedance 配置...");
-  const [isSavingKey, setIsSavingKey] = useState(false);
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [screenplayText, setScreenplayText] = useState(() => buildScreenplayText(draft));
   const [prompt, setPrompt] = useState("根据剧本生成电影感镜头，保持人物行动、场景氛围和视角转换一致。");
@@ -116,27 +114,6 @@ export function VideoGenerationPage() {
       });
     };
   }, []);
-
-  async function handleSaveApiKey() {
-    if (!apiKey.trim()) {
-      setKeyStatusMessage("请输入 Seedance API Key。");
-      return;
-    }
-
-    setIsSavingKey(true);
-    setKeyStatusMessage("正在保存 Seedance API Key...");
-    try {
-      const result = await studioApi.saveSeedanceApiKey(apiKey);
-      setIsKeyConfigured(result.configured);
-      setApiKey("");
-      setKeyStatusMessage("Seedance API Key 已保存到本地后端。");
-      await refreshModelOptions("video");
-    } catch (error) {
-      setKeyStatusMessage(error instanceof Error ? error.message : "保存失败。");
-    } finally {
-      setIsSavingKey(false);
-    }
-  }
 
   async function refreshModelOptions(kind: "video" | "image") {
     try {
@@ -480,18 +457,6 @@ export function VideoGenerationPage() {
           <div className="section-title">
             <KeyRound size={18} />
             <h2>Seedance 配置</h2>
-          </div>
-          <div className="api-key-row">
-            <input
-              className="text-input"
-              type="password"
-              value={apiKey}
-              placeholder={isKeyConfigured ? "已配置，可输入新 key 覆盖" : "输入 Seedance API Key"}
-              onChange={(event) => setApiKey(event.target.value)}
-            />
-            <button className="ghost-button" type="button" disabled={isSavingKey} onClick={handleSaveApiKey}>
-              {isSavingKey ? "保存中..." : "保存"}
-            </button>
           </div>
           <small className={isKeyConfigured ? "status-ok" : "status-warn"}>{keyStatusMessage}</small>
 

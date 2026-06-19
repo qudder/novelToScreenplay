@@ -180,12 +180,17 @@ export function useCurrentNovel() {
 function normalizeCurrentNovel(novel: CurrentNovel): CurrentNovel {
   return {
     ...novel,
+    characters: (novel.characters ?? []).map((character) => ({
+      ...character,
+      costumes: character.costumes ?? []
+    })),
     environments: novel.environments ?? [],
     shotPlans: novel.shotPlans ?? [],
     narrativeBlocks: novel.narrativeBlocks ?? [],
     subScenes: (novel.subScenes ?? []).map((subScene) => ({
       ...subScene,
-      shotIds: subScene.shotIds ?? []
+      shotIds: subScene.shotIds ?? [],
+      sceneInfo: subScene.sceneInfo
     }))
   };
 }

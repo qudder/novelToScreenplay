@@ -34,6 +34,52 @@ export type SourceRefDto = {
   evidence: string;
 };
 
+export type CharacterCostume = {
+  chapterId: string;
+  sceneTitle: string;
+  clothing: string;
+  accessories: string[];
+  makeup: string;
+  colorPalette: string;
+  condition: string;
+  sourceRefs?: SourceRef[];
+};
+
+export type CharacterCostumeDto = {
+  chapter_id: string;
+  scene_title: string;
+  clothing: string;
+  accessories: string[];
+  makeup: string;
+  color_palette: string;
+  condition: string;
+  source_refs?: SourceRefDto[];
+};
+
+export type SceneInfo = {
+  locationDetails: string;
+  timeText: string;
+  weather: string;
+  light: string;
+  sound: string;
+  atmosphere: string;
+  props: string[];
+  visualDetails: string[];
+  sourceRefs?: SourceRef[];
+};
+
+export type SceneInfoDto = {
+  location_details: string;
+  time_text: string;
+  weather: string;
+  light: string;
+  sound: string;
+  atmosphere: string;
+  props: string[];
+  visual_details: string[];
+  source_refs?: SourceRefDto[];
+};
+
 export type ImportDocumentResult = {
   document_id: string;
   filename: string;
@@ -115,6 +161,7 @@ export type Character = {
   role: string;
   description: string;
   appearances: string[];
+  costumes?: CharacterCostume[];
   sourceRefs?: SourceRef[];
 };
 
@@ -126,6 +173,7 @@ export type CharacterDto = {
   role: string;
   description: string;
   appearances: string[];
+  costumes?: CharacterCostumeDto[];
   source_refs?: SourceRefDto[];
 };
 
@@ -165,6 +213,7 @@ export type Scene = {
   eventTitles?: string[];
   characters?: string[];
   adaptationNote?: string;
+  sceneInfo?: SceneInfo;
   sourceRefs?: SourceRef[];
 };
 
@@ -216,6 +265,7 @@ export type SubScene = {
   conflictIds: string[];
   characters: string[];
   characterIds: string[];
+  sceneInfo?: SceneInfo;
   sourceRefs?: SourceRef[];
 };
 
@@ -237,6 +287,7 @@ export type SubSceneDto = {
   conflict_ids: string[];
   characters: string[];
   character_ids: string[];
+  scene_info?: SceneInfoDto;
   source_refs?: SourceRefDto[];
 };
 
@@ -358,6 +409,7 @@ export type SceneDto = {
   event_titles: string[];
   characters: string[];
   adaptation_note: string;
+  scene_info?: SceneInfoDto;
   source_refs?: SourceRefDto[];
 };
 

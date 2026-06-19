@@ -1,5 +1,6 @@
-import json
 import os
+import asyncio
+import json
 from pathlib import Path
 from typing import Any, Literal
 
@@ -19,10 +20,12 @@ class SeedreamImageConfigurationError(RuntimeError):
 
 
 class SeedreamImageGenerationRequest(BaseModel):
+    provider: Literal["seedream", "rightcode"] = "seedream"
     title: str = ""
     model: str = ""
     prompt: str = Field(min_length=1)
     negative_prompt: str = ""
+    reference_image_urls: list[str] = Field(default_factory=list)
     size: str = "1920x1920"
     response_format: Literal["url", "b64_json"] = "url"
     seed: int | None = None
@@ -53,36 +56,39 @@ class SeedreamImageGenerationResult(BaseModel):
 
 class SeedreamImageClient:
     async def generate_image(self, request: SeedreamImageGenerationRequest) -> SeedreamImageGenerationResult:
-        api_key = self._get_api_key()
+        api_key = self._get_api_key(request.provider)
         payload = self._build_payload(request)
         debug_dir = _prepare_debug_dir(request)
         _write_debug_json(debug_dir, "request.json", _redact_payload(payload))
         _write_debug_text(debug_dir, "prompt_summary.txt", _prompt_summary(request.prompt))
         logger.info(
-            "准备提交 Seedream 分镜图片生成：模型=%s，标题=%s，尺寸=%s，调试目录=%s",
+            "准备提交图片生成：提供方=%s，模型=%s，标题=%s，尺寸=%s，参考图数量=%s，调试目录=%s",
+            _provider_label(request.provider),
             _request_model(request),
             request.title or "未命名分镜图片",
             request.size,
+            len(_reference_image_urls(request)),
             debug_dir,
         )
 
         try:
-            async with httpx.AsyncClient(timeout=seedance_config.timeout_seconds) as client:
-                response = await client.post(
-                    f"{seedance_config.base_url}/images/generations",
-                    headers=self._headers(api_key),
-                    json=payload,
-                )
+            async with httpx.AsyncClient(timeout=_timeout_seconds(request.provider)) as client:
+                response = await self._post_with_retry(client, request, payload, debug_dir)
                 _write_debug_text(debug_dir, "raw_response.txt", response.text)
                 response.raise_for_status()
         except httpx.HTTPStatusError as error:
             _write_debug_text(debug_dir, "error.txt", error.response.text)
             _write_debug_json(debug_dir, "response.json", _response_summary(_safe_response_json(error.response)))
-            logger.exception("Seedream 分镜图片生成失败：状态码=%s，标题=%s", error.response.status_code, request.title or "未命名分镜图片")
-            raise RuntimeError(_extract_error_message(error.response)) from error
+            logger.exception("%s 图片生成失败：状态码=%s，标题=%s", _provider_label(request.provider), error.response.status_code, request.title or "未命名分镜图片")
+            raise RuntimeError(_extract_error_message(error.response, request.provider)) from error
+        except httpx.TimeoutException as error:
+            message = f"{_provider_label(request.provider)} 图片生成请求超时：标题={request.title or '未命名分镜图片'}，超时时间={_timeout_seconds(request.provider)}秒，调试目录={debug_dir}"
+            _write_debug_text(debug_dir, "error.txt", message)
+            logger.exception("%s", message)
+            raise RuntimeError(f"{_provider_label(request.provider)} 图片生成请求超时，请稍后重试或适当简化提示词。") from error
         except Exception as error:
             _write_debug_text(debug_dir, "error.txt", repr(error))
-            logger.exception("Seedream 分镜图片生成异常：标题=%s，错误=%s", request.title or "未命名分镜图片", error)
+            logger.exception("%s 图片生成异常：标题=%s，错误=%s", _provider_label(request.provider), request.title or "未命名分镜图片", error)
             raise
 
         response_payload = response.json()
@@ -92,7 +98,8 @@ class SeedreamImageClient:
         result.media = stored_media.to_dict()
         _write_debug_json(debug_dir, "media.json", result.media)
         logger.info(
-            "Seedream 分镜图片生成完成：状态=%s，图片URL=%s，本地路径=%s，Base64=%s，媒体有效=%s",
+            "%s 图片生成完成：状态=%s，图片URL=%s，本地路径=%s，Base64=%s，媒体有效=%s",
+            _provider_label(request.provider),
             result.status,
             "有" if result.image_url else "无",
             result.local_image_path or "无",
@@ -101,10 +108,44 @@ class SeedreamImageClient:
         )
         return result
 
-    def _get_api_key(self) -> str:
-        api_key = os.getenv("SEEDANCE_API_KEY", "").strip()
+    async def _post_with_retry(
+        self,
+        client: httpx.AsyncClient,
+        request: SeedreamImageGenerationRequest,
+        payload: dict[str, Any],
+        debug_dir: Path,
+    ) -> httpx.Response:
+        max_attempts = _max_attempts(request.provider)
+        for attempt in range(1, max_attempts + 1):
+            response = await client.post(
+                f"{_base_url(request.provider)}/images/generations",
+                headers=self._headers(self._get_api_key(request.provider)),
+                json=payload,
+            )
+            if not _should_retry_response(response, request.provider) or attempt >= max_attempts:
+                if attempt > 1:
+                    _write_debug_text(debug_dir, "retry.txt", f"图片生成重试结束：提供方={_provider_label(request.provider)}，尝试次数={attempt}，状态码={response.status_code}")
+                return response
+
+            wait_seconds = _retry_wait_seconds(attempt)
+            logger.warning(
+                "%s 图片生成遇到上游负载过高，准备重试：标题=%s，尝试次数=%s/%s，等待秒数=%s",
+                _provider_label(request.provider),
+                request.title or "未命名分镜图片",
+                attempt,
+                max_attempts,
+                wait_seconds,
+            )
+            await asyncio.sleep(wait_seconds)
+
+        raise RuntimeError(f"{_provider_label(request.provider)} 图片生成重试失败。")
+
+    def _get_api_key(self, provider: Literal["seedream", "rightcode"]) -> str:
+        key_name = "RIGHTCODE_API_KEY" if provider == "rightcode" else "SEEDANCE_API_KEY"
+        api_key = os.getenv(key_name, "").strip()
         if not api_key:
-            raise SeedreamImageConfigurationError("未配置 Seedance API Key。请先在分镜生图页保存 API Key。")
+            provider_name = "Right Code" if provider == "rightcode" else "Seedance"
+            raise SeedreamImageConfigurationError(f"未配置 {provider_name} API Key。请先在系统设置中保存 API Key。")
         return api_key
 
     def _headers(self, api_key: str) -> dict[str, str]:
@@ -121,9 +162,13 @@ class SeedreamImageClient:
             "model": _request_model(request),
             "prompt": prompt,
             "size": request.size,
-            "response_format": request.response_format,
+            "response_format": _response_format(request),
         }
-        if request.seed is not None:
+        reference_image_urls = _reference_image_urls(request)
+        if reference_image_urls and request.provider != "rightcode":
+            payload["image"] = reference_image_urls if len(reference_image_urls) > 1 else reference_image_urls[0]
+            payload["reference_image_urls"] = reference_image_urls
+        if request.seed is not None and request.provider != "rightcode":
             payload["seed"] = request.seed
         return payload
 
@@ -228,21 +273,98 @@ def _extract_error_from_payload(data: dict[str, Any]) -> str:
 
 
 def _request_model(request: SeedreamImageGenerationRequest) -> str:
-    return request.model.strip() or seedance_config.image_model
+    if request.model.strip():
+        return request.model.strip()
+    return "gpt-image-2" if request.provider == "rightcode" else seedance_config.image_model
 
 
-def _extract_error_message(response: httpx.Response) -> str:
+def _reference_image_urls(request: SeedreamImageGenerationRequest) -> list[str]:
+    valid_urls: list[str] = []
+    ignored_count = 0
+    for url in request.reference_image_urls:
+        normalized_url = url.strip()
+        if not normalized_url:
+            continue
+        if _is_remote_image_reference_url(normalized_url):
+            valid_urls.append(normalized_url)
+        else:
+            ignored_count += 1
+    if ignored_count:
+        logger.warning("Seedream 参考图已跳过无效地址：标题=%s，跳过数量=%s", request.title or "未命名分镜图片", ignored_count)
+    return valid_urls
+
+
+def _is_remote_image_reference_url(url: str) -> bool:
+    return url.startswith(("http://", "https://"))
+
+
+def _response_format(request: SeedreamImageGenerationRequest) -> Literal["url", "b64_json"]:
+    return "url" if request.provider == "rightcode" else request.response_format
+
+
+def _base_url(provider: Literal["seedream", "rightcode"]) -> str:
+    if provider == "rightcode":
+        return os.getenv("RIGHTCODE_DRAW_BASE_URL", "https://www.right.codes/draw/v1").rstrip("/")
+    return seedance_config.base_url
+
+
+def _timeout_seconds(provider: Literal["seedream", "rightcode"]) -> float:
+    if provider == "rightcode":
+        return seedance_config.rightcode_timeout_seconds
+    return seedance_config.timeout_seconds
+
+
+def _max_attempts(provider: Literal["seedream", "rightcode"]) -> int:
+    if provider == "rightcode":
+        return max(1, int(os.getenv("RIGHTCODE_MAX_ATTEMPTS", "3")))
+    return 1
+
+
+def _retry_wait_seconds(attempt: int) -> float:
+    return min(8.0, 2.0 * attempt)
+
+
+def _should_retry_response(response: httpx.Response, provider: Literal["seedream", "rightcode"]) -> bool:
+    if provider != "rightcode":
+        return False
+    if response.status_code in {429, 503, 504}:
+        return True
+    error_message = _response_error_message(response).lower()
+    return "excessive system load" in error_message
+
+
+def _response_error_message(response: httpx.Response) -> str:
     try:
         data = response.json()
     except ValueError:
-        return f"Seedream 请求失败：HTTP {response.status_code}"
+        return response.text[:1000]
+    if not isinstance(data, dict):
+        return ""
+    error = data.get("error")
+    if isinstance(error, dict):
+        return str(error.get("message") or error.get("code") or "")
+    return str(error or "")
+
+
+def _provider_label(provider: Literal["seedream", "rightcode"]) -> str:
+    return "Right Code" if provider == "rightcode" else "Seedream"
+
+
+def _extract_error_message(response: httpx.Response, provider: Literal["seedream", "rightcode"] = "seedream") -> str:
+    provider_name = _provider_label(provider)
+    try:
+        data = response.json()
+    except ValueError:
+        return f"{provider_name} 请求失败：HTTP {response.status_code}"
 
     error = data.get("error") if isinstance(data, dict) else None
     if isinstance(error, dict):
         message = error.get("message") or error.get("code")
         if message:
-            return f"Seedream 请求失败：{message}"
-    return f"Seedream 请求失败：HTTP {response.status_code}"
+            if provider == "rightcode" and "excessive system load" in str(message).lower():
+                return "Right Code 请求失败：上游服务负载过高，请稍后重试。"
+            return f"{provider_name} 请求失败：{message}"
+    return f"{provider_name} 请求失败：HTTP {response.status_code}"
 
 
 def _prepare_debug_dir(request: SeedreamImageGenerationRequest) -> Path:
@@ -251,7 +373,8 @@ def _prepare_debug_dir(request: SeedreamImageGenerationRequest) -> Path:
     scene_dir = context_dir_name(request.scene_title, request.scene_id, "未知场景")
     shot_dir = context_dir_name(request.shot_label or request.title, request.shot_id, "未知镜头")
     frame_dir = f"{context_dir_name(request.frame_label, request.frame_id, '未知小分镜')}-{timestamp_slug()}"
-    debug_dir = seedance_config.seedream_debug_dir / document_dir / chapter_dir / scene_dir / shot_dir / frame_dir
+    provider_dir = "rightcode" if request.provider == "rightcode" else "seedream"
+    debug_dir = seedance_config.seedream_debug_dir / provider_dir / document_dir / chapter_dir / scene_dir / shot_dir / frame_dir
     debug_dir.mkdir(parents=True, exist_ok=True)
     return debug_dir
 
@@ -301,9 +424,13 @@ def _write_debug_text(debug_dir: Path, filename: str, content: str) -> None:
 
 
 def _redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    reference_urls = payload.get("reference_image_urls")
+    reference_count = len(reference_urls) if isinstance(reference_urls, list) else int(bool(payload.get("image")))
     return {
         **payload,
-        "prompt": "已隐藏提交给 Seedream 的完整分镜图片提示词。",
+        "prompt": "已隐藏提交给图片模型的完整提示词。",
+        "image": "已隐藏参考图片内容。" if payload.get("image") else "",
+        "reference_image_urls": f"已隐藏 {reference_count} 张参考图片。",
     }
 
 

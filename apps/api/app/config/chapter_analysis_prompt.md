@@ -73,6 +73,25 @@
       "role": "主角/反派/盟友/阻碍者/配角/提及角色",
       "description": "角色在本章的剧本功能",
       "appearances": ["chapter-1"],
+      "costumes": [
+        {
+          "chapter_id": "chapter-1",
+          "scene_title": "对应场景或事件标题",
+          "clothing": "角色服饰或穿着",
+          "accessories": ["首饰或配饰"],
+          "makeup": "妆容或面部状态",
+          "color_palette": "服饰颜色或视觉印象",
+          "condition": "服饰状态",
+          "source_refs": [
+            {
+              "chapter_id": "chapter-1",
+              "evidence": "原文服饰证据",
+              "start_char": -1,
+              "end_char": -1
+            }
+          ]
+        }
+      ],
       "evidence": "原文证据",
       "source_refs": [
         {
@@ -262,6 +281,24 @@
       "time_of_day": "晨/昼/夜/未知",
       "dramatic_function": "铺垫/冲突/揭示/反转/高潮/收束",
       "event_titles": ["事件标题"],
+      "scene_info": {
+        "location_details": "场景空间和调度细节",
+        "time_text": "小说时间表达",
+        "weather": "天气",
+        "light": "光线",
+        "sound": "声音",
+        "atmosphere": "氛围",
+        "props": ["关键道具"],
+        "visual_details": ["可拍摄视觉细节"],
+        "source_refs": [
+          {
+            "chapter_id": "chapter-1",
+            "evidence": "原文场景信息证据",
+            "start_char": -1,
+            "end_char": -1
+          }
+        ]
+      },
       "dialogue_ids": [],
       "environment_ids": [],
       "action_ids": [],
@@ -288,6 +325,24 @@
       "characters": ["角色名"],
       "dramatic_function": "铺垫/冲突/揭示/反转/高潮/收束",
       "adaptation_note": "改编提示",
+      "scene_info": {
+        "location_details": "场景空间和调度细节",
+        "time_text": "小说时间表达",
+        "weather": "天气",
+        "light": "光线",
+        "sound": "声音",
+        "atmosphere": "氛围",
+        "props": ["关键道具"],
+        "visual_details": ["可拍摄视觉细节"],
+        "source_refs": [
+          {
+            "chapter_id": "chapter-1",
+            "evidence": "原文场景信息证据",
+            "start_char": -1,
+            "end_char": -1
+          }
+        ]
+      },
       "evidence": "原文证据",
       "source_refs": [
         {

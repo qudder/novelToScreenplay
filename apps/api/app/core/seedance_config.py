@@ -27,6 +27,10 @@ class SeedanceConfig:
         return float(os.getenv("SEEDANCE_TIMEOUT_SECONDS", "60"))
 
     @property
+    def rightcode_timeout_seconds(self) -> float:
+        return float(os.getenv("RIGHTCODE_TIMEOUT_SECONDS", "180"))
+
+    @property
     def execution_expires_after(self) -> int:
         return int(os.getenv("SEEDANCE_EXECUTION_EXPIRES_AFTER", "172800"))
 
