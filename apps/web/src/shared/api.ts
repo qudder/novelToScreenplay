@@ -575,6 +575,17 @@ export const studioApi = {
     return mapImportResult((await response.json()) as ImportDocumentResult);
   },
 
+  async deleteDocument(documentId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}`, {
+      method: "DELETE"
+    });
+
+    if (!response.ok && response.status !== 404) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "删除本地小说缓存失败。");
+    }
+  },
+
   async restoreDocument(snapshot: {
     documentId?: string;
     analysisStatus?: "idle" | "running" | "completed" | "failed";
