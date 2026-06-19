@@ -140,6 +140,15 @@ def restore_document(document_id: str, payload: ImportResult) -> ImportResult:
     return workspace_service.restore_import_result(payload)
 
 
+@router.delete("/documents/{document_id}", status_code=204)
+def delete_document(document_id: str) -> Response:
+    deleted = workspace_service.delete_document(document_id)
+    if not deleted:
+        logger.warning("删除文档失败：文档不存在，文档ID=%s", document_id)
+        raise HTTPException(status_code=404, detail="文档不存在。")
+    return Response(status_code=204)
+
+
 @router.get("/documents/{document_id}/analysis", response_model=AnalysisResult)
 def get_document_analysis(document_id: str) -> AnalysisResult:
     analysis = workspace_service.get_analysis(document_id)
@@ -173,7 +182,7 @@ def retry_document_analysis(document_id: str, background_tasks: BackgroundTasks)
         logger.warning("重试叙事分析失败：文档ID=%s", document_id)
         raise HTTPException(status_code=404, detail="文档不存在。")
 
-    background_tasks.add_task(workspace_service.run_analysis, document_id, True)
+    background_tasks.add_task(workspace_service.run_analysis, document_id, False, True)
     return result
 
 

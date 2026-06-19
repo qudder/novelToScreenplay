@@ -98,11 +98,37 @@ async def analyze_chapters(chapters: list[Chapter], source_text: str, filename: 
         *[_analyze_single_chapter(chapter, source_text, semaphore, filename=filename, force_refresh=force_refresh) for chapter in chapters]
     )
 
-    aggregated = AggregatedAnalysis(list(analyses))
+    return aggregate_chapter_analyses(chapters, list(analyses))
+
+
+def aggregate_chapter_analyses(chapters: list[Chapter], chapter_analyses: list[ChapterAnalysis]) -> AggregatedAnalysis:
+    aggregated = AggregatedAnalysis(chapter_analyses)
     _attach_character_ids(chapters, aggregated.characters)
     _attach_event_and_scene_ids(aggregated)
     _ensure_hierarchical_scene_data(chapters, aggregated)
     return aggregated
+
+
+def has_chapter_analysis_content(analysis: ChapterAnalysis) -> bool:
+    return any(
+        [
+            analysis.characters,
+            analysis.locations,
+            analysis.environments,
+            analysis.shot_plans,
+            analysis.time_markers,
+            analysis.events,
+            analysis.relationships,
+            analysis.conflicts,
+            analysis.dialogues,
+            analysis.actions,
+            analysis.motivations,
+            analysis.causal_links,
+            analysis.scene_candidates,
+            analysis.narrative_blocks,
+            analysis.sub_scenes,
+        ]
+    )
 
 
 async def _analyze_single_chapter(
@@ -113,6 +139,7 @@ async def _analyze_single_chapter(
     force_refresh: bool = False,
 ) -> ChapterAnalysis:
     chapter_text = _chapter_text(chapter, source_text)
+    chapter_start_char = _chapter_start_char(chapter, source_text, chapter_text)
     cache_path = _chapter_cache_path(chapter, chapter_text, filename)
     legacy_cache_path = _legacy_chapter_cache_path(chapter, chapter_text, filename)
 
@@ -133,7 +160,7 @@ async def _analyze_single_chapter(
                     read_cache_path.unlink(missing_ok=True)
                 raise _RefreshChapterCache()
             analysis = _parse_analysis(chapter.id, payload)
-            _attach_source_positions(analysis, chapter_text)
+            _attach_source_positions(analysis, chapter_text, chapter_start_char)
             if read_cache_path != cache_path:
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
                 cache_path.write_text(json.dumps(_cache_payload(payload), ensure_ascii=False, indent=2), encoding="utf-8")
@@ -175,7 +202,7 @@ async def _analyze_single_chapter(
         cache_path.write_text(json.dumps(_cache_payload(payload), ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info("章节叙事分析已写入缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
         analysis = _parse_analysis(chapter.id, payload)
-        _attach_source_positions(analysis, chapter_text)
+        _attach_source_positions(analysis, chapter_text, chapter_start_char)
         return analysis
 
 
@@ -454,9 +481,12 @@ def _parse_emotion_arc(item: dict[str, Any]) -> EmotionArc:
 
 
 def _chapter_text(chapter: Chapter, source_text: str) -> str:
-    start = source_text.find(chapter.title)
+    start = chapter.source_start if chapter.source_start >= 0 else source_text.find(chapter.title)
     if start < 0:
         return f"{chapter.title}\n{chapter.summary}"
+
+    if chapter.source_end > start:
+        return source_text[start:chapter.source_end].strip()
 
     next_index = len(source_text)
     for line in source_text[start + len(chapter.title) :].splitlines():
@@ -467,6 +497,13 @@ def _chapter_text(chapter: Chapter, source_text: str) -> str:
                 next_index = marker
                 break
     return source_text[start:next_index].strip()
+
+
+def _chapter_start_char(chapter: Chapter, source_text: str, chapter_text: str) -> int:
+    if chapter.source_start >= 0:
+        return chapter.source_start
+    index = source_text.find(chapter_text)
+    return index if index >= 0 else 0
 
 
 def _attach_character_ids(chapters: list[Chapter], characters: list[Character]) -> None:
@@ -590,29 +627,30 @@ def _fallback_sub_scene_from_scene(scene: Scene) -> SubScene:
     )
 
 
-def _attach_source_positions(analysis: ChapterAnalysis, chapter_text: str) -> None:
+def _attach_source_positions(analysis: ChapterAnalysis, chapter_text: str, chapter_start_char: int) -> None:
     for character in analysis.characters:
-        _locate_refs(character.source_refs, chapter_text)
+        _locate_refs(character.source_refs, chapter_text, chapter_start_char)
     for event in analysis.events:
-        _locate_refs(event.source_refs, chapter_text)
+        _locate_refs(event.source_refs, chapter_text, chapter_start_char)
     for environment in analysis.environments:
-        _locate_refs(environment.source_refs, chapter_text)
+        _locate_refs(environment.source_refs, chapter_text, chapter_start_char)
     for shot_plan in analysis.shot_plans:
-        _locate_refs(shot_plan.source_refs, chapter_text)
+        _locate_refs(shot_plan.source_refs, chapter_text, chapter_start_char)
     for dialogue in analysis.dialogues:
-        _locate_refs(dialogue.source_refs, chapter_text)
+        _locate_refs(dialogue.source_refs, chapter_text, chapter_start_char)
     for scene in analysis.scene_candidates:
-        _locate_refs(scene.source_refs, chapter_text)
+        _locate_refs(scene.source_refs, chapter_text, chapter_start_char)
     for block in analysis.narrative_blocks:
-        _locate_refs(block.source_refs, chapter_text)
+        _locate_refs(block.source_refs, chapter_text, chapter_start_char)
     for sub_scene in analysis.sub_scenes:
-        _locate_refs(sub_scene.source_refs, chapter_text)
+        _locate_refs(sub_scene.source_refs, chapter_text, chapter_start_char)
 
 
-def _locate_refs(refs: list[SourceRef], chapter_text: str) -> None:
+def _locate_refs(refs: list[SourceRef], chapter_text: str, chapter_start_char: int) -> None:
     for ref in refs:
         if ref.start_char >= 0 and ref.end_char >= ref.start_char:
-            continue
+            if _normalize_ref_position(ref, chapter_text, chapter_start_char):
+                continue
         evidence = ref.evidence.strip()
         if not evidence:
             continue
@@ -622,8 +660,35 @@ def _locate_refs(refs: list[SourceRef], chapter_text: str) -> None:
             if index >= 0:
                 evidence = evidence[:20]
         if index >= 0:
-            ref.start_char = index
-            ref.end_char = index + len(evidence)
+            ref.start_char = chapter_start_char + index
+            ref.end_char = ref.start_char + len(evidence)
+
+
+def _normalize_ref_position(ref: SourceRef, chapter_text: str, chapter_start_char: int) -> bool:
+    evidence = ref.evidence.strip()
+    relative_start = ref.start_char - chapter_start_char
+    relative_end = ref.end_char - chapter_start_char
+
+    if _range_matches_evidence(chapter_text, relative_start, relative_end, evidence):
+        return True
+
+    if _range_matches_evidence(chapter_text, ref.start_char, ref.end_char, evidence):
+        ref.start_char += chapter_start_char
+        ref.end_char += chapter_start_char
+        return True
+
+    if not evidence and ref.end_char <= len(chapter_text):
+        ref.start_char += chapter_start_char
+        ref.end_char += chapter_start_char
+        return True
+
+    return False
+
+
+def _range_matches_evidence(text: str, start: int, end: int, evidence: str) -> bool:
+    if start < 0 or end < start or end > len(text):
+        return False
+    return not evidence or text[start:end] == evidence
 
 
 def _text(value: Any) -> str:

@@ -38,7 +38,7 @@ export function StoryboardImageGenerationPage() {
   const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 Seedance 配置...");
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [prompt, setPrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("彩色、精致插画、电影剧照、复杂材质、细腻表情、写实皮肤、强光影、文字、字幕、对白、旁白、水印、画面畸变");
+  const [negativePrompt, setNegativePrompt] = useState("黑白线稿、粗略草图、低细节框架图、简化轮廓图、文字、字幕、对白、旁白、水印、画面畸变");
   const [model, setModel] = useState(imageModelOptions[0]);
   const [availableModels, setAvailableModels] = useState(imageModelOptions);
   const [customModel, setCustomModel] = useState("");
@@ -571,31 +571,31 @@ function getShotFrames(shot: StoryboardShot): ShotFrame[] {
       id: "composition",
       label: "构图定帧",
       value: shot.composition || "构图待定",
-      instruction: "只生成该镜头的黑白构图草图，重点表现人物相对位置、画面分区、前后景关系和大概场景轮廓。"
+      instruction: "只生成该镜头的电影感构图定帧，重点表现人物相对位置、画面分区、前后景关系、戏剧性光线和场景空间。"
     },
     {
       id: "focus",
       label: "焦点定帧",
       value: shot.visualFocus || "视觉焦点待定",
-      instruction: "只生成该镜头的黑白焦点草图，重点表现观众视线落点、人物或物件的大概位置，不刻画细节。"
+      instruction: "只生成该镜头的电影感焦点定帧，重点表现观众视线落点、人物或物件位置、氛围感景深和光影层次。"
     },
     {
       id: "viewpoint",
       label: "视角定帧",
       value: shot.viewpoint || "视角待定",
-      instruction: "只生成该镜头的黑白视角草图，重点表现机位高度、观察方向、人物朝向和空间距离。"
+      instruction: "只生成该镜头的电影感视角定帧，重点表现机位高度、观察方向、人物朝向、空间距离和 2.39:1 画面调度。"
     },
     {
       id: "emotion",
       label: "情绪定帧",
       value: shot.emotionalPurpose || "情绪目的待定",
-      instruction: "只生成该镜头的黑白情绪草图，重点用人物姿态、相互距离、站位压迫和场景空旷程度表达情绪。"
+      instruction: "只生成该镜头的电影感情绪定帧，重点用低调灯光、浓重阴影、人物姿态、相互距离和空间压迫表达情绪。"
     },
     {
       id: "transition",
       label: "转场定帧",
       value: shot.transition || "转场待定",
-      instruction: "只生成该镜头的黑白转场草图，重点表现离场、进入、遮挡或视线方向等大概空间变化。"
+      instruction: "只生成该镜头的电影感转场定帧，重点表现离场、进入、遮挡、视线方向和高对比度的动态瞬间。"
     }
   ];
 }
@@ -630,7 +630,7 @@ function buildWholeShotFrame(shot: StoryboardShot): ShotFrame {
     id: "whole-shot",
     label: "完整镜头",
     value: shotDetails.join("\n"),
-    instruction: "生成该镜头的整体黑白分镜草图，综合人物相对位置、场景空间、景别、视角、构图、视觉焦点和转场信息。"
+    instruction: "生成该镜头的整体电影感分镜图片，综合人物相对位置、场景空间、景别、视角、构图、视觉焦点、光线氛围和转场信息。"
   };
 }
 
@@ -645,8 +645,8 @@ function buildFrameStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: Storybo
   const shotIndex = storyboardShots.findIndex((item) => item.id === shot.id);
   const shotNumber = shotIndex >= 0 ? shotIndex + 1 : 1;
   return [
-    `为影视分镜生成一张黑白粗略框架图。`,
-    `画面风格：黑白线稿、分镜草图、低细节、只看布局，不要精致插画或电影剧照。`,
+    `为影视分镜生成一张电影感分镜图片。`,
+    `画面风格：电影般的广角镜头、戏剧性光线、氛围感景深、低调灯光、2.39:1 宽高比、电影剧照质感。`,
     `当前生成目标：${frame.label}`,
     `生成范围：${frame.instruction}`,
     `分镜点内容：${frame.value}`,
@@ -655,9 +655,9 @@ function buildFrameStoryboardPrompt(scene?: SceneScreenplayDraft, shot?: Storybo
     `人物：${scene.characters.join("、") || "相关人物"}`,
     `镜头编号：镜头${shotNumber}`,
     `基础景别：${shot.shotType || "景别待定"}`,
-    `必须介绍人物的相对位置、朝向、前后景关系和大概场景结构；人物可用简化轮廓或剪影表示。`,
-    frame.id === "whole-shot" ? `需要把该镜头的完整数据整合为单张草图，不要遗漏关键站位、焦点和场景空间。` : `不要扩展到其他分镜点，不要同时表现完整镜头运动或完整转场过程。`,
-    `不要绘制细腻五官、复杂服装纹理、彩色光影或成片级质感。`,
+    `必须介绍人物的相对位置、朝向、前后景关系、场景结构、视觉焦点和光影氛围。`,
+    frame.id === "whole-shot" ? `需要把该镜头的完整数据整合为单张电影画面，不要遗漏关键站位、焦点和场景空间。` : `不要扩展到其他分镜点，不要同时表现完整镜头运动或完整转场过程。`,
+    `不要生成黑白线稿、粗略草图、低细节框架图或简化轮廓图。`,
     `画面中不要出现对话、对白字幕、旁白文字、屏幕文字或任何可读文本。`
   ]
     .filter(Boolean)

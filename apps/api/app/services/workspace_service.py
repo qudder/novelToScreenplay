@@ -1,9 +1,15 @@
+from pathlib import Path
+import shutil
+
 from fastapi import UploadFile
 
+from app.core.deepseek_config import deepseek_config
 from app.domain.models import AnalysisResult, AnalysisStartResult, ImportResult, Workspace
 from app.repositories.document_store import DocumentRecord, document_store
 from app.repositories.memory_repository import memory_repository
-from app.services.chapter_analysis_service import analyze_chapters
+from app.services import character_llm_extractor
+from app.services import chapter_analysis_service
+from app.services.chapter_analysis_service import aggregate_chapter_analyses, analyze_chapters, has_chapter_analysis_content
 from app.services.document_parser import extract_text, split_into_chapters
 from app.core.logging_config import get_logger
 
@@ -115,6 +121,21 @@ class WorkspaceService:
         logger.info("已从浏览器快照恢复文档：文档ID=%s，章节数=%s", record.id, len(record.chapters))
         return self.get_import_result(record.id) or payload
 
+    def delete_document(self, document_id: str) -> bool:
+        record = document_store.delete(document_id)
+        if not record:
+            return False
+
+        deleted_cache_count = _delete_document_cache(record)
+        logger.info(
+            "本地文档及缓存已删除：文档ID=%s，文件名=%s，章节数=%s，缓存项数=%s",
+            document_id,
+            record.filename,
+            len(record.chapters),
+            deleted_cache_count,
+        )
+        return True
+
     def start_analysis(self, document_id: str) -> AnalysisStartResult | None:
         record = document_store.get(document_id)
         if not record:
@@ -143,25 +164,37 @@ class WorkspaceService:
         if not record:
             return None
 
+        pending_chapter_ids = _pending_chapter_ids(record)
         record.analysis.status = "running"
-        record.analysis.message = "叙事分析正在运行。"
+        if pending_chapter_ids and len(pending_chapter_ids) < len(record.chapters):
+            record.analysis.message = f"正在继续分析未完成章节：{len(pending_chapter_ids)} / {len(record.chapters)}。"
+        else:
+            record.analysis.message = "叙事分析正在运行。"
         document_store.save(record)
-        logger.info("已请求重新执行叙事分析：文档ID=%s，章节数=%s", document_id, len(record.chapters))
+        logger.info(
+            "已请求重新执行叙事分析：文档ID=%s，章节数=%s，待分析章节数=%s",
+            document_id,
+            len(record.chapters),
+            len(pending_chapter_ids) or len(record.chapters),
+        )
         return AnalysisStartResult(
             document_id=document_id,
             status="running",
             message=record.analysis.message,
         )
 
-    async def run_analysis(self, document_id: str, force_refresh: bool = False) -> None:
+    async def run_analysis(self, document_id: str, force_refresh: bool = False, resume_incomplete: bool = False) -> None:
         record = document_store.get(document_id)
         if not record:
             logger.warning("跳过叙事分析执行：文档不存在，文档ID=%s", document_id)
             return
 
         try:
-            logger.info("叙事分析开始执行：文档ID=%s，文件名=%s，章节数=%s", document_id, record.filename, len(record.chapters))
-            analysis = await analyze_chapters(record.chapters, record.source_text, filename=record.filename, force_refresh=force_refresh)
+            if resume_incomplete:
+                analysis = await _resume_incomplete_analysis(record)
+            else:
+                logger.info("叙事分析开始执行：文档ID=%s，文件名=%s，章节数=%s", document_id, record.filename, len(record.chapters))
+                analysis = await analyze_chapters(record.chapters, record.source_text, filename=record.filename, force_refresh=force_refresh)
             record.analysis = AnalysisResult(
                 document_id=document_id,
                 status="completed",
@@ -231,28 +264,83 @@ def _has_analysis_payload(payload: ImportResult) -> bool:
     )
 
 
+async def _resume_incomplete_analysis(record: DocumentRecord):
+    pending_chapter_ids = _pending_chapter_ids(record)
+    if not pending_chapter_ids:
+        logger.info("未发现待续跑章节，将复用已有叙事分析结果：文档ID=%s，章节数=%s", record.id, len(record.chapters))
+        return aggregate_chapter_analyses(record.chapters, record.analysis.chapter_analyses)
+
+    pending_id_set = set(pending_chapter_ids)
+    pending_chapters = [chapter for chapter in record.chapters if chapter.id in pending_id_set]
+    logger.info(
+        "叙事分析继续执行：文档ID=%s，文件名=%s，待分析章节数=%s，已完成章节数=%s",
+        record.id,
+        record.filename,
+        len(pending_chapters),
+        len(record.chapters) - len(pending_chapters),
+    )
+    resumed_analysis = await analyze_chapters(pending_chapters, record.source_text, filename=record.filename, force_refresh=True)
+    existing_by_chapter_id = {
+        analysis.chapter_id: analysis
+        for analysis in record.analysis.chapter_analyses
+        if has_chapter_analysis_content(analysis) and analysis.chapter_id not in pending_id_set
+    }
+    resumed_by_chapter_id = {analysis.chapter_id: analysis for analysis in resumed_analysis.chapter_analyses}
+    merged_chapter_analyses = [
+        resumed_by_chapter_id.get(chapter.id) or existing_by_chapter_id[chapter.id]
+        for chapter in record.chapters
+        if chapter.id in resumed_by_chapter_id or chapter.id in existing_by_chapter_id
+    ]
+    logger.info(
+        "叙事分析续跑结果已合并：文档ID=%s，章节结果数=%s，续跑章节数=%s",
+        record.id,
+        len(merged_chapter_analyses),
+        len(resumed_by_chapter_id),
+    )
+    return aggregate_chapter_analyses(record.chapters, merged_chapter_analyses)
+
+
+def _pending_chapter_ids(record: DocumentRecord) -> list[str]:
+    completed_chapter_ids = {
+        analysis.chapter_id
+        for analysis in record.analysis.chapter_analyses
+        if has_chapter_analysis_content(analysis)
+    }
+    return [chapter.id for chapter in record.chapters if chapter.id not in completed_chapter_ids]
+
+
 def _empty_chapter_ids(chapter_analyses) -> list[str]:
     empty_ids: list[str] = []
     for analysis in chapter_analyses:
-        has_content = any(
-            [
-                analysis.characters,
-                analysis.locations,
-                analysis.environments,
-                analysis.shot_plans,
-                analysis.time_markers,
-                analysis.events,
-                analysis.relationships,
-                analysis.conflicts,
-                analysis.dialogues,
-                analysis.actions,
-                analysis.motivations,
-                analysis.causal_links,
-                analysis.scene_candidates,
-                analysis.narrative_blocks,
-                analysis.sub_scenes,
-            ]
-        )
-        if not has_content:
+        if not has_chapter_analysis_content(analysis):
             empty_ids.append(analysis.chapter_id)
     return empty_ids
+
+
+def _delete_document_cache(record: DocumentRecord) -> int:
+    deleted_count = 0
+    for chapter in record.chapters:
+        chapter_text = chapter_analysis_service._chapter_text(chapter, record.source_text)
+        deleted_count += _delete_file(chapter_analysis_service._chapter_cache_path(chapter, chapter_text, record.filename))
+        deleted_count += _delete_file(chapter_analysis_service._legacy_chapter_cache_path(chapter, chapter_text, record.filename))
+        deleted_count += _delete_dir(chapter_analysis_service._chapter_debug_dir(chapter, chapter_text, record.filename))
+        deleted_count += _delete_dir(deepseek_config.legacy_debug_dir / chapter_analysis_service._chapter_debug_name(chapter, chapter_text, record.filename))
+
+        character_chapter_text = character_llm_extractor._chapter_text(chapter, record.source_text)
+        deleted_count += _delete_file(character_llm_extractor._chapter_cache_path(chapter, character_chapter_text))
+
+    return deleted_count
+
+
+def _delete_file(path: Path) -> int:
+    if not path.exists() or not path.is_file():
+        return 0
+    path.unlink(missing_ok=True)
+    return 1
+
+
+def _delete_dir(path: Path) -> int:
+    if not path.exists() or not path.is_dir():
+        return 0
+    shutil.rmtree(path, ignore_errors=True)
+    return 1

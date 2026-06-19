@@ -1,4 +1,5 @@
 import json
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -111,6 +112,21 @@ class DocumentStore:
             json.dumps(record.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    def delete(self, document_id: str) -> DocumentRecord | None:
+        record = self.get(document_id)
+        if not record:
+            return None
+
+        self._records.pop(document_id, None)
+        record_paths = [self._record_path(document_id, record.filename), self._legacy_record_path(document_id)]
+        for record_path in record_paths:
+            if record_path.exists():
+                if record_path.parent == self._data_dir or record_path.parent == self._legacy_data_dir:
+                    record_path.unlink(missing_ok=True)
+                else:
+                    shutil.rmtree(record_path.parent, ignore_errors=True)
+        return record
 
     def _record_path(self, document_id: str, filename: str | None = None) -> Path:
         if filename:

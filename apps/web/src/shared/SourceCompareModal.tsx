@@ -153,6 +153,8 @@ function choosePrimaryRef(refs: SourceRef[]) {
 
 function normalizeRefToSourceText(ref: SourceRef | undefined, chapters: Chapter[], sourceText: string): SourceRef | undefined {
   if (!ref || ref.startChar < 0 || ref.endChar <= ref.startChar) return ref;
+  if (refMatchesEvidence(sourceText, ref)) return ref;
+
   const chapter = chapters.find((item) => item.id === ref.chapterId);
   if (!chapter) return ref;
 
@@ -161,11 +163,37 @@ function normalizeRefToSourceText(ref: SourceRef | undefined, chapters: Chapter[
   const chapterBodyStart = sourceText.indexOf("\n", range.startChar);
   const offset = chapterBodyStart >= 0 && chapterBodyStart < range.endChar ? chapterBodyStart + 1 : range.startChar + chapter.title.length;
 
-  return {
+  const normalizedRef = {
     ...ref,
     startChar: offset + ref.startChar,
     endChar: offset + ref.endChar
   };
+  if (refMatchesEvidence(sourceText, normalizedRef)) return normalizedRef;
+
+  const evidenceIndex = findEvidenceInRange(sourceText, ref.evidence, range.startChar, range.endChar);
+  if (evidenceIndex >= 0) {
+    return {
+      ...ref,
+      startChar: evidenceIndex,
+      endChar: evidenceIndex + ref.evidence.trim().length
+    };
+  }
+
+  return ref;
+}
+
+function refMatchesEvidence(sourceText: string, ref: SourceRef) {
+  const evidence = ref.evidence.trim();
+  if (!evidence) return false;
+  if (ref.startChar < 0 || ref.endChar < ref.startChar || ref.endChar > sourceText.length) return false;
+  return sourceText.slice(ref.startChar, ref.endChar) === evidence;
+}
+
+function findEvidenceInRange(sourceText: string, evidence: string, startChar: number, endChar: number) {
+  const normalizedEvidence = evidence.trim();
+  if (!normalizedEvidence) return -1;
+  const index = sourceText.indexOf(normalizedEvidence, startChar);
+  return index >= 0 && index < endChar ? index : -1;
 }
 
 function buildChapterRanges(chapters: Chapter[], sourceText: string) {

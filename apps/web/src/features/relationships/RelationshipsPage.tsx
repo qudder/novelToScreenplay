@@ -13,6 +13,8 @@ type GraphNode = {
     label: string;
     role: string;
     importance: number;
+    size: number;
+    isMainCharacter: boolean;
   };
 };
 
@@ -31,7 +33,12 @@ function resolveRelationshipEndpoint(value: string, characterIdMap: Map<string, 
   return characterIdMap.get(value) ?? value;
 }
 
+function getCharacterNodeSize(importance: number) {
+  return Math.max(46, Math.min(86, importance));
+}
+
 function buildGraphData(characters: Character[], relationships: Relationship[]) {
+  const mainCharacter = [...characters].sort((a, b) => b.importance - a.importance)[0];
   const nodeIds = new Set(characters.map((character) => character.id));
   const characterIdMap = new Map<string, string>();
   characters.forEach((character) => {
@@ -44,7 +51,9 @@ function buildGraphData(characters: Character[], relationships: Relationship[]) 
     data: {
       label: character.name,
       role: character.role,
-      importance: character.importance
+      importance: character.importance,
+      size: getCharacterNodeSize(character.importance),
+      isMainCharacter: character.id === mainCharacter?.id
     }
   }));
 
@@ -80,7 +89,7 @@ function buildGraphData(characters: Character[], relationships: Relationship[]) 
 
   const edges = Array.from(edgeMap.values());
 
-  return { nodes, edges };
+  return { nodes, edges, mainCharacterId: mainCharacter?.id ?? "" };
 }
 
 function buildGraphDataSignature(characters: Character[], relationships: Relationship[]) {
@@ -132,14 +141,25 @@ export function RelationshipsPage() {
       layout: {
         type: "force",
         preventOverlap: true,
-        linkDistance: 180
+        nodeSize: (datum: unknown) => {
+          const node = datum as { data?: { size?: number } };
+          return Number(node.data?.size ?? 56) + 34;
+        },
+        nodeSpacing: 28,
+        collideStrength: 1,
+        linkDistance: 230,
+        center: [graphContainerRef.current.clientWidth / 2, graphContainerRef.current.clientHeight / 2],
+        nodeStrength: (datum: unknown) => {
+          const node = datum as { data?: { isMainCharacter?: boolean } };
+          return node.data?.isMainCharacter ? -420 : -180;
+        }
       },
       node: {
         style: {
-          size: (datum) => Math.max(36, Math.min(72, Number(datum.data?.importance ?? 50))),
-          fill: "#f8fbfb",
-          stroke: "#2f6f73",
-          lineWidth: 1.5,
+          size: (datum) => Number(datum.data?.size ?? 56),
+          fill: (datum) => (datum.data?.isMainCharacter ? "#fff4d2" : "#f8fbfb"),
+          stroke: (datum) => (datum.data?.isMainCharacter ? "#c28c15" : "#2f6f73"),
+          lineWidth: (datum) => (datum.data?.isMainCharacter ? 2.5 : 1.5),
           labelText: (datum) => String(datum.data?.label ?? ""),
           labelFill: "#173b3d",
           labelFontSize: 13,
@@ -191,7 +211,9 @@ export function RelationshipsPage() {
 
     const fitFrame = window.requestAnimationFrame(() => {
       graph.resize();
-      graph.fitView();
+      graph.focusElement(graphData.mainCharacterId || graphData.nodes[0]?.id, {
+        duration: 240
+      });
     });
 
     return () => {

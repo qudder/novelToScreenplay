@@ -71,6 +71,7 @@ export function ImportPage() {
   const [keyStatusMessage, setKeyStatusMessage] = useState("正在读取 DeepSeek 配置...");
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [comparePayload, setComparePayload] = useState<ComparePayload | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState("");
   const activeNovelId = getActiveNovelId();
   const returnTarget = getReturnTarget(searchParams.get("from"));
 
@@ -149,9 +150,19 @@ export function ImportPage() {
     setErrorMessage(null);
   }
 
-  function handleRemoveNovel(targetDocumentId: string) {
-    removeNovelFromLibrary(targetDocumentId);
-    setComparePayload(null);
+  async function handleRemoveNovel(targetDocumentId: string) {
+    setDeletingDocumentId(targetDocumentId);
+    setErrorMessage(null);
+    try {
+      await studioApi.deleteDocument(targetDocumentId);
+      removeNovelFromLibrary(targetDocumentId);
+      setComparePayload(null);
+      setStatusMessage("已删除本地小说及相关缓存。");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "删除本地小说缓存失败。");
+    } finally {
+      setDeletingDocumentId("");
+    }
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -312,7 +323,13 @@ export function ImportPage() {
                         {item.chapterCount} 章 · {item.analysisStatus ?? "idle"} · {item.eventCount} 事件 · {item.sceneCount} 场景
                       </small>
                     </button>
-                    <button className="icon-button" type="button" aria-label={`删除 ${item.filename} 本地缓存`} onClick={() => handleRemoveNovel(item.documentId)}>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`删除 ${item.filename} 本地缓存`}
+                      disabled={deletingDocumentId === item.documentId}
+                      onClick={() => handleRemoveNovel(item.documentId)}
+                    >
                       <Trash2 size={15} />
                     </button>
                   </div>
