@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.core.deepseek_config import deepseek_config
 from app.core.logging_config import get_logger
-from app.core.storage_config import storage_config
+from app.core.persistence import persistence_layout
 from app.services.model_provider_service import ModelProviderProfile, model_provider_service
 
 logger = get_logger("services.model_gateway")
@@ -248,7 +248,7 @@ def _extract_json_object(text: str) -> str:
 def _prepare_debug_dir(profile_id: str, debug_context: str | None) -> Path:
     safe_profile = "".join(char if char.isalnum() or char in "-_" else "-" for char in (profile_id or "provider"))
     safe_context = "".join(char if char.isalnum() or char in "-_" else "-" for char in (debug_context or "request"))
-    debug_dir = storage_config.debug_dir / "model-gateway" / safe_profile / safe_context
+    debug_dir = persistence_layout.model_gateway_debug_dir / safe_profile / safe_context
     debug_dir.mkdir(parents=True, exist_ok=True)
     return debug_dir
 

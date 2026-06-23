@@ -103,6 +103,10 @@ export function AppShell() {
             );
           })}
         </nav>
+        <div className="sidebar-status" aria-label="工作台状态">
+          <strong>创作流程</strong>
+          <span>导入小说、拆解叙事、生成剧本与分镜素材。</span>
+        </div>
       </aside>
       <main className="workspace">
         <Outlet />

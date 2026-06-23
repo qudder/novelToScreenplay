@@ -10,8 +10,8 @@ from pydantic import BaseModel
 
 from app.core.deepseek_config import deepseek_config
 from app.core.logging_config import get_logger
+from app.core.persistence import persistence_layout
 from app.core.seedance_config import seedance_config
-from app.core.storage_config import storage_config
 
 logger = get_logger("services.model_provider")
 
@@ -161,9 +161,11 @@ FIXED_PROVIDERS: dict[str, FixedProviderDefinition] = {
 
 class ModelProviderService:
     def __init__(self) -> None:
-        self.settings_dir = storage_config.root_dir / "settings"
+        self.settings_dir = persistence_layout.settings_dir
         self.settings_path = self.settings_dir / "model-providers.json"
         self.secrets_path = self.settings_dir / "secrets.env"
+        self.legacy_settings_path = persistence_layout.legacy_settings_dir / "model-providers.json"
+        self.legacy_secrets_path = persistence_layout.legacy_settings_dir / "secrets.env"
         self.legacy_env_path = Path(__file__).resolve().parents[2] / ".env"
 
     def list_profiles(self) -> list[ModelProviderPublicProfile]:
@@ -290,9 +292,13 @@ class ModelProviderService:
 
     def _read_settings(self) -> ModelProviderSettings:
         self.settings_dir.mkdir(parents=True, exist_ok=True)
-        if self.settings_path.exists():
-            raw = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        settings_path = self.settings_path if self.settings_path.exists() else self.legacy_settings_path
+        if settings_path.exists():
+            raw = json.loads(settings_path.read_text(encoding="utf-8"))
             settings = ModelProviderSettings.model_validate(raw if isinstance(raw.get("providers"), dict) else {})
+            if settings_path == self.legacy_settings_path:
+                self._write_settings(settings)
+                logger.info("模型配置已迁移到新持久化目录：旧路径=%s，新路径=%s", settings_path, self.settings_path)
         else:
             settings = ModelProviderSettings()
         self._load_secrets_to_env()
@@ -364,7 +370,11 @@ class ModelProviderService:
         os.environ[key_name] = value
 
     def _load_secrets_to_env(self) -> None:
-        for key, value in self._read_env_values(self.secrets_path).items():
+        values = self._read_env_values(self.legacy_secrets_path) | self._read_env_values(self.secrets_path)
+        if values and self.legacy_secrets_path.exists() and not self.secrets_path.exists():
+            self._write_env_values(self.secrets_path, values)
+            logger.info("模型密钥配置已迁移到新持久化目录：旧路径=%s，新路径=%s", self.legacy_secrets_path, self.secrets_path)
+        for key, value in values.items():
             os.environ.setdefault(key, value)
 
     def _read_env_values(self, path: Path) -> dict[str, str]:

@@ -173,6 +173,63 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 (Invoke-RestMethod http://127.0.0.1:8000/openapi.json).paths.PSObject.Properties.Name
 ```
 
+## PowerShell 执行约束
+
+在 Windows PowerShell 中运行排查、验证和服务管理命令时，必须优先使用 PowerShell 兼容写法，避免把 Bash 习惯直接搬过来导致误判。
+
+### Python 临时代码
+
+- 不得使用 Bash here-doc 写法，例如 `python - <<'PY'`，PowerShell 会把 `<` 解析为重定向并报错。
+- 简短脚本使用 `python -c "..."`；多行或复杂脚本应临时保存为受控脚本文件后执行，执行完确认不提交临时文件。
+- 需要设置导入路径时，使用 `$env:PYTHONPATH='apps/api'; python -c "..."`。
+
+推荐：
+
+```powershell
+$env:PYTHONPATH='apps/api'
+python -c "from app.main import app; print(app.title)"
+```
+
+### 正则与引号
+
+- `rg`、`Select-String` 等命令中的正则优先用单引号包裹，避免 `"`、`[`、`]`、`|` 被 PowerShell 提前解释。
+- 正则本身需要单引号时，再切换为双引号并手动转义。
+
+推荐：
+
+```powershell
+rg -n 'logger\.(info|warning|error|debug|exception)\("[A-Za-z]' apps/api/app
+rg -n 'throw new Error\("[A-Za-z]|console\.(log|warn|error)\("[A-Za-z]' apps/web/src
+```
+
+### 启停服务
+
+- 启动后端服务前，先确认目标端口是否已被占用；若需要后台运行，使用 `Start-Process` 并指定 `-WorkingDirectory`、`-WindowStyle Hidden`、标准输出和错误日志路径。
+- 停止服务不能只依赖 `Stop-Process` 的单个 PID；`uvicorn --reload` 会产生 reloader 和子进程，端口可能由子进程继续监听。
+- 关闭端口时，先查监听端口，再结合 `Get-CimInstance Win32_Process`、`tasklist` 和 `netstat -ano` 交叉确认实际进程；必要时按实际 Python 子进程 PID 使用 `taskkill /T /F`。
+- 关闭后必须同时验证端口和健康检查：`netstat` 不再显示监听，并且 `/health` 已不可访问。
+
+推荐：
+
+```powershell
+$ports = 8000,8001,8010,8011,5173,5174
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $_.LocalPort -in $ports } |
+  Select-Object LocalAddress,LocalPort,OwningProcess
+
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -like '*app.main:app*' -or $_.CommandLine -like '*vite*' } |
+  Select-Object ProcessId,ParentProcessId,CommandLine
+
+netstat -ano | Select-String ':8000|:8001|:8010|:8011|:5173|:5174'
+```
+
+### 命令结果判断
+
+- PowerShell 表格输出可能截断长路径；查看调试目录、日志路径和缓存路径时，使用 `ForEach-Object { $_.FullName }` 或显式字符串格式化输出完整路径。
+- 端口进程关闭后，`Get-NetTCPConnection` 可能短暂显示不存在的 PID；遇到不一致时必须用 `netstat -ano`、`tasklist /FI "PID eq <pid>"` 和实际接口请求交叉确认。
+- 命令失败时先区分“Shell 语法错误”和“业务代码错误”。例如 PowerShell 报 `<` 重定向错误、正则引号错误，不应直接归因于 Python、前端或后端实现。
+
 ## 提交前检查
 
 每次提交 PR 前，必须至少执行以下检查：
@@ -227,4 +284,3 @@ cd apps/web; npm run build
 - 对 DeepSeek 请求记录章节 ID、模型名、调试目录，不记录 API Key。
 - 对缓存命中、缓存失效、强制刷新分别记录中文日志。
 - 前端错误提示优先告诉用户下一步能做什么。
-

@@ -145,7 +145,7 @@ export function ScreenplayPage() {
   return (
     <section ref={ref} className="page">
       <PageHeader
-        eyebrow="Screenplay Draft"
+        eyebrow="剧本草稿"
         title="剧本生成"
         description="左侧选择场景，右侧编辑对应场景剧本。支持人工修改和自动补全，保存后可在剧本总览中导出。"
       />

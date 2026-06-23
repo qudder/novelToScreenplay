@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from app.core.storage_config import storage_config
+from app.core.persistence import persistence_layout
 
 
 class DeepSeekConfig(BaseModel):
@@ -16,10 +16,10 @@ class DeepSeekConfig(BaseModel):
     prompt_path: Path = Path(__file__).resolve().parents[1] / "config" / "chapter_analysis_prompt.md"
     screenplay_prompt_path: Path = Path(__file__).resolve().parents[1] / "config" / "screenplay_completion_prompt.md"
     storyboard_image_prompt_path: Path = Path(__file__).resolve().parents[1] / "config" / "storyboard_image_prompt.md"
-    cache_dir: Path = storage_config.cache_dir / "deepseek"
-    debug_dir: Path = storage_config.debug_dir / "deepseek"
-    legacy_cache_dir: Path = Path(__file__).resolve().parents[1] / ".cache" / "deepseek"
-    legacy_debug_dir: Path = Path(__file__).resolve().parents[1] / ".debug" / "deepseek"
+    cache_dir: Path = persistence_layout.deepseek_cache_dir
+    debug_dir: Path = persistence_layout.deepseek_debug_dir
+    legacy_cache_dir: Path = persistence_layout.legacy_deepseek_cache_dir
+    legacy_debug_dir: Path = persistence_layout.legacy_deepseek_debug_dir
 
     @property
     def current_base_url(self) -> str:

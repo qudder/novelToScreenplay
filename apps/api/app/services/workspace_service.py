@@ -1,14 +1,9 @@
-from pathlib import Path
-import shutil
-
 from fastapi import UploadFile
 
-from app.core.deepseek_config import deepseek_config
+from app.core.persistence import persistence_layout
 from app.domain.models import AnalysisResult, AnalysisStartResult, ImportResult, Workspace
 from app.repositories.document_store import DocumentRecord, document_store
 from app.repositories.memory_repository import memory_repository
-from app.services import character_llm_extractor
-from app.services import chapter_analysis_service
 from app.services.chapter_analysis_service import aggregate_chapter_analyses, analyze_chapters, has_chapter_analysis_content
 from app.services.document_parser import extract_text, split_into_chapters
 from app.core.logging_config import get_logger
@@ -323,29 +318,4 @@ def _empty_chapter_ids(chapter_analyses) -> list[str]:
 
 
 def _delete_document_cache(record: DocumentRecord) -> int:
-    deleted_count = 0
-    for chapter in record.chapters:
-        chapter_text = chapter_analysis_service._chapter_text(chapter, record.source_text)
-        deleted_count += _delete_file(chapter_analysis_service._chapter_cache_path(chapter, chapter_text, record.filename))
-        deleted_count += _delete_file(chapter_analysis_service._legacy_chapter_cache_path(chapter, chapter_text, record.filename))
-        deleted_count += _delete_dir(chapter_analysis_service._chapter_debug_dir(chapter, chapter_text, record.filename))
-        deleted_count += _delete_dir(deepseek_config.legacy_debug_dir / chapter_analysis_service._chapter_debug_name(chapter, chapter_text, record.filename))
-
-        character_chapter_text = character_llm_extractor._chapter_text(chapter, record.source_text)
-        deleted_count += _delete_file(character_llm_extractor._chapter_cache_path(chapter, character_chapter_text))
-
-    return deleted_count
-
-
-def _delete_file(path: Path) -> int:
-    if not path.exists() or not path.is_file():
-        return 0
-    path.unlink(missing_ok=True)
-    return 1
-
-
-def _delete_dir(path: Path) -> int:
-    if not path.exists() or not path.is_dir():
-        return 0
-    shutil.rmtree(path, ignore_errors=True)
-    return 1
+    return persistence_layout.delete_document_runtime(record.chapters, record.source_text, record.filename)
