@@ -50,12 +50,14 @@ class SeedanceTaskResult(BaseModel):
 class SeedanceClient:
     async def create_task(self, request: SeedanceCreateTaskRequest) -> SeedanceTaskResult:
         api_key = self._get_api_key()
+        request_url = _require_config_url(seedance_config.video_create_url, "Seedance 视频任务创建完整地址")
         payload = self._build_create_payload(request)
         debug_dir = _prepare_debug_dir("create-task")
         _write_debug_json(debug_dir, "request.json", _redact_payload(payload))
         logger.info(
-            "准备提交 Seedance 视频任务：模型=%s，标题=%s，画幅=%s，时长=%s，清晰度=%s，参考图数量=%s",
+            "准备提交 Seedance 视频任务：模型=%s，接口地址=%s，标题=%s，画幅=%s，时长=%s，清晰度=%s，参考图数量=%s",
             _request_model(request),
+            request_url,
             request.title or "未命名任务",
             request.ratio,
             request.duration,
@@ -66,7 +68,7 @@ class SeedanceClient:
         try:
             async with httpx.AsyncClient(timeout=seedance_config.timeout_seconds) as client:
                 response = await client.post(
-                    f"{seedance_config.base_url}/contents/generations/tasks",
+                    request_url,
                     headers=self._headers(api_key),
                     json=payload,
                 )
@@ -96,12 +98,16 @@ class SeedanceClient:
     async def get_task(self, task_id: str) -> SeedanceTaskResult:
         api_key = self._get_api_key()
         debug_dir = _prepare_debug_dir(f"get-task-{task_id}")
-        logger.info("准备查询 Seedance 视频任务：任务ID=%s", task_id)
+        request_url_template = _require_config_url(seedance_config.video_query_url_template, "Seedance 视频任务查询完整地址")
+        if "{task_id}" not in request_url_template:
+            raise SeedanceConfigurationError("Seedance 视频任务查询完整地址必须包含 {task_id} 占位符。")
+        request_url = request_url_template.format(task_id=task_id)
+        logger.info("准备查询 Seedance 视频任务：任务ID=%s，接口地址=%s", task_id, request_url)
 
         try:
             async with httpx.AsyncClient(timeout=seedance_config.timeout_seconds) as client:
                 response = await client.get(
-                    f"{seedance_config.base_url}/contents/generations/tasks/{task_id}",
+                    request_url,
                     headers=self._headers(api_key),
                 )
                 _write_debug_text(debug_dir, "raw_response.txt", response.text)
@@ -294,6 +300,13 @@ def _extract_error_from_payload(data: dict[str, Any]) -> str:
 
 def _request_model(request: SeedanceCreateTaskRequest) -> str:
     return request.model.strip() or seedance_config.model
+
+
+def _require_config_url(value: str, label: str) -> str:
+    cleaned = value.strip()
+    if not cleaned:
+        raise SeedanceConfigurationError(f"未配置 {label}。请先在系统设置中填写完整接口地址。")
+    return cleaned
 
 
 def _extract_error_message(response: httpx.Response) -> str:

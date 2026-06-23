@@ -11,7 +11,7 @@ export type ImageProviderConfig = {
   supportsModelList: boolean;
   minimumPixels?: number;
   imageSizeOptions: string[];
-  getSettings: () => Promise<{ configured: boolean }>;
+  getSettings: () => Promise<{ configured: boolean; model?: string }>;
 };
 
 export const seedreamMinimumPixels = 3686400;
@@ -30,10 +30,10 @@ export const imageProviders: Record<ImageProviderId, ImageProviderConfig> = {
   },
   rightcode: {
     id: "rightcode",
-    label: "Right Code",
+    label: "RightCode",
     defaultModels: ["gpt-image-2"],
     defaultModel: "gpt-image-2",
-    keyName: "Right Code API Key",
+    keyName: "RightCode API Key",
     supportsModelList: false,
     imageSizeOptions: ["1024x1024", "1536x1024", "1024x1536"],
     getSettings: () => studioApi.getRightCodeSettings()

@@ -29,6 +29,7 @@ class ScreenplayCompletionRequest(BaseModel):
     source_refs: list[SourceRef] = []
     source_text: str = ""
     current_content: str = ""
+    model_profile_id: str = ""
 
 
 class ScreenplayCompletionResult(BaseModel):
@@ -53,6 +54,7 @@ async def complete_scene_screenplay(payload: ScreenplayCompletionRequest) -> Scr
         debug_context=debug_context,
         temperature=0.35,
         max_tokens=12000,
+        model_profile_id=payload.model_profile_id,
     )
     logger.info("场景剧本生成完成：文档ID=%s，场景ID=%s，剧本字符数=%s", payload.document_id, payload.scene_id, len(content))
     return ScreenplayCompletionResult(content=content)

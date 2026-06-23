@@ -5,6 +5,7 @@ import { PageHeader } from "../../shared/PageHeader";
 import { switchCurrentNovelFromBackend } from "../../shared/currentNovel";
 import {
   deleteStoryboardImageTaskPermanently,
+  getPreferredStoryboardImageUrl,
   moveStoryboardImageTaskToTrash,
   restoreStoryboardImageTask,
   type StoryboardImageTask,
@@ -13,8 +14,6 @@ import {
 } from "../../shared/storyboardImages";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 import type { VideoTaskTag } from "../../shared/videoTasks";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export function StoryboardImageManagementPage() {
   const ref = useEntranceAnimation<HTMLDivElement>();
@@ -198,38 +197,8 @@ function statusText(status: StoryboardImageTask["status"]) {
   return labels[status];
 }
 
-function getPreferredStoryboardImageUrl(task: StoryboardImageTask) {
-  return getLocalGeneratedMediaUrl(task.localImagePath) || getMediaLocalUrl(task.media) || resolveApiAssetUrl(task.imageUrl ?? "");
-}
-
-function getLocalGeneratedMediaUrl(localImagePath?: string) {
-  if (!localImagePath) return "";
-  const normalizedPath = localImagePath.replace(/\\/g, "/");
-  const marker = "/generated_media/";
-  const markerIndex = normalizedPath.lastIndexOf(marker);
-  if (markerIndex < 0) return "";
-  const relativePath = normalizedPath.slice(markerIndex + marker.length);
-  return resolveApiAssetUrl(`/media/generated/${relativePath}`);
-}
-
-function getMediaLocalUrl(media?: Record<string, unknown>) {
-  const localUrl = typeof media?.local_url === "string" ? media.local_url : "";
-  if (localUrl) return resolveApiAssetUrl(localUrl);
-  const localPath = typeof media?.local_path === "string" ? media.local_path : "";
-  return getLocalGeneratedMediaUrl(localPath);
-}
-
 function isLocalGeneratedMediaTask(task: StoryboardImageTask) {
-  return Boolean(
-    getLocalGeneratedMediaUrl(task.localImagePath) ||
-      getMediaLocalUrl(task.media) ||
-      task.imageUrl?.startsWith("/media/generated")
-  );
-}
-
-function resolveApiAssetUrl(url: string) {
-  if (!url || !url.startsWith("/")) return url;
-  return `${API_BASE_URL}${url}`;
+  return getPreferredStoryboardImageUrl(task).includes("/media/generated/");
 }
 
 function withReturnSource(route: string, source: string) {

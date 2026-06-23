@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Bot, Save, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Bot, Save, Sparkles, WandSparkles } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { useCurrentNovel } from "../../shared/currentNovel";
+import { ModelProfileSelect } from "../../shared/ModelProfileSelect";
 import { SourceTrace } from "../../shared/SourceTrace";
 import {
   buildDraftFromNovel,
@@ -23,7 +24,14 @@ export function ScreenplayPage() {
   const [editorValue, setEditorValue] = useState("");
   const [statusMessage, setStatusMessage] = useState("请选择一个场景开始编写。");
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isCompletingAll, setIsCompletingAll] = useState(false);
+  const [modelProfileId, setModelProfileId] = useState("");
+  const selectedSceneIdRef = useRef("");
   const returnTarget = getReturnTarget(searchParams.get("from"));
+
+  useEffect(() => {
+    selectedSceneIdRef.current = selectedSceneId;
+  }, [selectedSceneId]);
 
   useEffect(() => {
     if (!currentNovel) return;
@@ -64,16 +72,9 @@ export function ScreenplayPage() {
   async function handleAiComplete() {
     if (!draft || !selectedScene || !currentNovel) return;
     setIsCompleting(true);
-    setStatusMessage("正在调用 DeepSeek 生成本场剧本...");
+    setStatusMessage("正在调用文本模型生成本场剧本...");
     try {
-      const completion = await studioApi.completeSceneScreenplay({
-        documentId: currentNovel.documentId ?? draft.documentId,
-        filename: currentNovel.filename,
-        scene: selectedScene,
-        sourceText: currentNovel.sourceText,
-        events: currentNovel.events,
-        currentContent: editorValue
-      });
+      const completion = await completeScene(selectedScene, editorValue);
       const nextDraft = updateSceneDraft(draft, selectedScene.sceneId, completion, true);
       setDraft(nextDraft);
       saveScreenplayDraft(nextDraft);
@@ -84,6 +85,59 @@ export function ScreenplayPage() {
     } finally {
       setIsCompleting(false);
     }
+  }
+
+  async function handleAiCompleteAll() {
+    if (!draft || !currentNovel || !scenes.length) return;
+    setIsCompletingAll(true);
+    setStatusMessage(`正在批量生成全部场景剧本：0 / ${scenes.length}`);
+
+    let completedCount = 0;
+    const failedScenes: string[] = [];
+    let latestDraft = selectedScene ? updateSceneDraft(draft, selectedScene.sceneId, editorValue) : draft;
+    setDraft(latestDraft);
+    saveScreenplayDraft(latestDraft);
+
+    await Promise.allSettled(
+      latestDraft.scenes.map(async (scene) => {
+        try {
+          const completion = await completeScene(scene, scene.content);
+          latestDraft = updateSceneDraft(latestDraft, scene.sceneId, completion, true);
+          saveScreenplayDraft(latestDraft);
+          setDraft(latestDraft);
+          if (selectedSceneIdRef.current === scene.sceneId) {
+            setEditorValue(completion);
+          }
+        } catch {
+          failedScenes.push(scene.title);
+        } finally {
+          completedCount += 1;
+          setStatusMessage(`正在批量生成全部场景剧本：${completedCount} / ${scenes.length}`);
+        }
+      })
+    );
+
+    setIsCompletingAll(false);
+    if (failedScenes.length) {
+      setStatusMessage(`批量生成完成，${failedScenes.length} 场失败：${failedScenes.slice(0, 3).join("、")}。`);
+      return;
+    }
+    setStatusMessage("全部场景剧本已生成，并保存到本地草稿。");
+  }
+
+  function completeScene(scene: ScreenplayDraft["scenes"][number], currentContent: string) {
+    if (!draft || !currentNovel) {
+      return Promise.reject(new Error("暂无可生成的剧本草稿。"));
+    }
+    return studioApi.completeSceneScreenplay({
+      documentId: currentNovel.documentId ?? draft.documentId,
+      filename: currentNovel.filename,
+      scene,
+      sourceText: currentNovel.sourceText,
+      events: currentNovel.events,
+      currentContent,
+      modelProfileId
+    });
   }
 
   const scenes = draft?.scenes ?? [];
@@ -148,6 +202,7 @@ export function ScreenplayPage() {
           <section className="panel animate-in screenplay-editor-panel">
             {selectedScene ? (
               <>
+                <ModelProfileSelect purpose="screenplay_completion" label="本次剧本补全模型" value={modelProfileId} onChange={setModelProfileId} />
                 <div className="screenplay-editor-header">
                   <div>
                     <span>当前场景</span>
@@ -157,11 +212,15 @@ export function ScreenplayPage() {
                     </small>
                   </div>
                   <div className="toolbar">
-                    <button className="ghost-button" type="button" disabled={isCompleting} onClick={handleAiComplete}>
+                    <button className="ghost-button" type="button" disabled={isCompleting || isCompletingAll} onClick={handleAiComplete}>
                       <Bot size={16} />
                       {isCompleting ? "生成中..." : "AI 自动补全"}
                     </button>
-                    <button className="primary-button" type="button" onClick={saveCurrentEditorValue}>
+                    <button className="ghost-button" type="button" disabled={isCompleting || isCompletingAll} onClick={handleAiCompleteAll}>
+                      <WandSparkles size={16} />
+                      {isCompletingAll ? "批量生成中..." : "一键生成全部"}
+                    </button>
+                    <button className="primary-button" type="button" disabled={isCompletingAll} onClick={saveCurrentEditorValue}>
                       <Save size={16} />
                       保存本场
                     </button>

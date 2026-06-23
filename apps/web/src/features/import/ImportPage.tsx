@@ -3,6 +3,7 @@ import { ArrowLeft, BookMarked, FileText, KeyRound, PlayCircle, Trash2, UploadCl
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
+import { ModelProfileSelect } from "../../shared/ModelProfileSelect";
 import {
   getActiveNovelId,
   getCurrentNovel,
@@ -66,6 +67,7 @@ export function ImportPage() {
     scenes: importedNovel?.subScenes?.length || importedNovel?.scenes.length || 0
   });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisModelProfileId, setAnalysisModelProfileId] = useState("");
   const [comparePayload, setComparePayload] = useState<ComparePayload | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState("");
   const activeNovelId = getActiveNovelId();
@@ -186,9 +188,9 @@ export function ImportPage() {
 
     try {
       if (analysisStatus === "completed" || analysisStatus === "failed") {
-        await studioApi.retryDocumentAnalysis(documentId);
+        await studioApi.retryDocumentAnalysis(documentId, analysisModelProfileId);
       } else {
-        await studioApi.startDocumentAnalysis(documentId);
+        await studioApi.startDocumentAnalysis(documentId, analysisModelProfileId);
       }
       await pollAnalysis(documentId);
     } catch (error) {
@@ -309,9 +311,10 @@ export function ImportPage() {
           <div className="settings-panel">
             <div className="section-title">
               <KeyRound size={18} />
-              <h2>DeepSeek 配置</h2>
+              <h2>文本模型配置</h2>
             </div>
-            <p className="muted-line">API Key 已统一迁移到系统设置页管理，叙事分析会直接读取本地后端配置。</p>
+            <p className="muted-line">API Key 已统一迁移到系统设置页管理。这里的选择只影响当前页面会话，不会修改全局默认模型。</p>
+            <ModelProfileSelect purpose="narrative_analysis" label="本次叙事分析模型" value={analysisModelProfileId} onChange={setAnalysisModelProfileId} />
           </div>
 
           <div className="upload-zone">

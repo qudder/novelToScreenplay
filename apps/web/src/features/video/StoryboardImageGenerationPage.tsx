@@ -4,6 +4,7 @@ import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { useCurrentNovel } from "../../shared/currentNovel";
 import { imageProviderOptions, imageProviders, isValidImageSize, type ImageProviderId } from "../../shared/imageProviders";
+import { ModelProfileSelect } from "../../shared/ModelProfileSelect";
 import { getScreenplayDraft, type SceneScreenplayDraft } from "../../shared/screenplayDraft";
 import { saveStoryboardImageTask } from "../../shared/storyboardImages";
 import type { ShotPlan } from "../../shared/types";
@@ -39,6 +40,7 @@ export function StoryboardImageGenerationPage() {
   const [seed, setSeed] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  const [promptModelProfileId, setPromptModelProfileId] = useState("");
   const [framePrompts, setFramePrompts] = useState<Record<string, string>>({});
   const [shotPrompts, setShotPrompts] = useState<Record<string, string>>({});
   const [promptTarget, setPromptTarget] = useState<PromptTarget>({ type: "frame" });
@@ -81,6 +83,10 @@ export function StoryboardImageGenerationPage() {
         if (isCancelled) return;
         setIsKeyConfigured(settings.configured);
         setKeyStatusMessage(settings.configured ? `${providerConfig.keyName} 已配置。` : `${providerConfig.keyName} 尚未配置。`);
+        if (imageProvider === "rightcode" && settings.model) {
+          setAvailableModels([settings.model]);
+          setModel(settings.model);
+        }
         if (settings.configured && providerConfig.supportsModelList) {
           refreshModelOptions(imageProvider, () => isCancelled);
         }
@@ -99,8 +105,9 @@ export function StoryboardImageGenerationPage() {
     try {
       if (!imageProviders[providerId].supportsModelList) return;
       const models = await studioApi.getSeedanceModels();
-      const matchedModels = models.map((item) => item.id).filter((id) => id.toLowerCase().includes("seedream"));
-      const nextModels = matchedModels.length ? matchedModels : models.map((item) => item.id);
+      const modelIds = models.map((item) => item.id);
+      const matchedModels = providerId === "seedream" ? modelIds.filter((id) => id.toLowerCase().includes("seedream")) : [];
+      const nextModels = matchedModels.length ? matchedModels : modelIds;
       if (isCancelled()) return;
       if (!nextModels.length) return;
       setAvailableModels(nextModels);
@@ -217,14 +224,15 @@ export function StoryboardImageGenerationPage() {
       return;
     }
     setIsGeneratingPrompt(true);
-    setStatusMessage(promptTarget.type === "shot" ? "正在调用 DeepSeek 生成当前镜头提示词..." : "正在调用 DeepSeek 生成当前定帧提示词...");
+    setStatusMessage(promptTarget.type === "shot" ? "正在调用文本模型生成当前镜头提示词..." : "正在调用文本模型生成当前定帧提示词...");
     try {
       const nextPrompt = await studioApi.generateStoryboardFramePrompt({
         documentId: currentNovel.documentId ?? "",
         filename: currentNovel.filename,
         scene: selectedScene,
         shot: selectedShot,
-        frame: targetFrame
+        frame: targetFrame,
+        modelProfileId: promptModelProfileId
       });
       if (promptTarget.type === "shot") {
         setShotPrompts((current) => ({ ...current, [shotPromptKeyFor(selectedShot)]: nextPrompt }));
@@ -405,6 +413,7 @@ export function StoryboardImageGenerationPage() {
                 {isGeneratingPrompt ? "生成中..." : promptTarget.type === "shot" ? "AI 生成当前镜头" : "AI 生成当前定帧"}
               </button>
             </div>
+            <ModelProfileSelect purpose="storyboard_prompt" label="本次提示词模型" value={promptModelProfileId} onChange={setPromptModelProfileId} />
             <textarea
               className="video-script-editor storyboard-prompt-editor"
               value={prompt}

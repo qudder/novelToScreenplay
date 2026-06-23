@@ -1,42 +1,67 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { KeyRound, RefreshCw, Save } from "lucide-react";
 import { PageHeader } from "../../shared/PageHeader";
-import { studioApi } from "../../shared/api";
+import { studioApi, type ModelProviderModel, type ModelProviderProfile, type ModelProviderProfilePayload } from "../../shared/api";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 
-type ApiKeyConfig = {
-  id: "deepseek" | "seedance" | "rightcode";
+type ProviderCardDefinition = {
+  id: "deepseek" | "rightcode" | "seedance" | "generic-relay";
   title: string;
   description: string;
-  placeholder: string;
-  loadSettings: () => Promise<{ configured: boolean }>;
-  saveApiKey: (apiKey: string) => Promise<{ configured: boolean }>;
+  apiKeyLabel: string;
+  requiresBaseUrl: boolean;
+  allowModelInput: boolean;
+  supportsModelList: boolean;
+  builtInModels?: string[];
+  defaultModel: string;
+  defaultBaseUrl: string;
 };
 
-const apiKeyConfigs: ApiKeyConfig[] = [
+const providerCards: ProviderCardDefinition[] = [
   {
     id: "deepseek",
-    title: "DeepSeek API Key",
-    description: "用于小说分章后的叙事分析、角色抽取、分镜提示词和剧本补全。",
-    placeholder: "输入 DeepSeek API Key",
-    loadSettings: () => studioApi.getDeepSeekSettings(),
-    saveApiKey: (apiKey) => studioApi.saveDeepSeekApiKey(apiKey)
-  },
-  {
-    id: "seedance",
-    title: "Seedance API Key",
-    description: "用于读取 Seedance/Seedream 模型列表，并创建分镜图片、角色图片和视频生成任务。",
-    placeholder: "输入 Seedance API Key",
-    loadSettings: () => studioApi.getSeedanceSettings(),
-    saveApiKey: (apiKey) => studioApi.saveSeedanceApiKey(apiKey)
+    title: "DeepSeek",
+    description: "指定文本厂商，只需要填写 API Key，接口地址使用系统内置配置，模型 ID 可按实际账号权限填写。",
+    apiKeyLabel: "DeepSeek API Key",
+    requiresBaseUrl: false,
+    allowModelInput: true,
+    supportsModelList: true,
+    defaultModel: "deepseek-chat",
+    defaultBaseUrl: "https://api.deepseek.com"
   },
   {
     id: "rightcode",
-    title: "Right Code API Key",
-    description: "用于通过 Right Code 绘图入口创建 OpenAI 兼容图片生成任务，基础地址为 https://www.right.codes/draw。",
-    placeholder: "输入 Right Code API Key",
-    loadSettings: () => studioApi.getRightCodeSettings(),
-    saveApiKey: (apiKey) => studioApi.saveRightCodeApiKey(apiKey)
+    title: "RightCode",
+    description: "指定第三方中转厂商，只需要填写 API Key，图片生成地址使用系统内置配置，模型 ID 可按实际服务配置填写。",
+    apiKeyLabel: "RightCode API Key",
+    requiresBaseUrl: false,
+    allowModelInput: true,
+    supportsModelList: false,
+    defaultModel: "gpt-image-2",
+    defaultBaseUrl: "https://www.right.codes/draw/v1"
+  },
+  {
+    id: "seedance",
+    title: "Seedance",
+    description: "指定视频与 Seedream 图片厂商，只需要填写 API Key，接口地址使用系统内置配置，模型可从内置列表下拉选择。",
+    apiKeyLabel: "Seedance API Key",
+    requiresBaseUrl: false,
+    allowModelInput: true,
+    supportsModelList: true,
+    builtInModels: ["doubao-seedance-1-0-lite-t2v-250428", "doubao-seedream-5-0-260128", "doubao-seedream-4-0-250828", "doubao-seedream-3-0-t2i-250415"],
+    defaultModel: "doubao-seedance-1-0-lite-t2v-250428",
+    defaultBaseUrl: "https://ark.cn-beijing.volces.com/api/v3"
+  },
+  {
+    id: "generic-relay",
+    title: "其他服务商",
+    description: "文本、视觉和多模态通用接口，需要填写接口地址和 API Key。模型 ID 可从 /models 读取，失败时可手动填写。",
+    apiKeyLabel: "API Key",
+    requiresBaseUrl: true,
+    allowModelInput: true,
+    supportsModelList: true,
+    defaultModel: "",
+    defaultBaseUrl: ""
   }
 ];
 
@@ -48,67 +73,171 @@ export function SettingsPage() {
       <PageHeader
         eyebrow="System Settings"
         title="系统设置"
-        description="统一管理本地后端使用的模型 API Key，业务页面只读取配置状态。"
+        description="按固定四张卡片管理模型接入：指定厂商只填 API Key，其他服务商填写接口地址和 API Key。"
       />
       <div className="settings-page-layout">
-        <section className="panel animate-in">
-          <div className="section-title">
-            <KeyRound size={18} />
-            <h2>API Key 配置</h2>
-          </div>
-          <div className="api-settings-list">
-            {apiKeyConfigs.map((config) => (
-              <ApiKeySettingCard key={config.id} config={config} />
-            ))}
-          </div>
-        </section>
+        <ModelProviderCardsPanel />
       </div>
     </section>
   );
 }
 
-function ApiKeySettingCard({ config }: { config: ApiKeyConfig }) {
-  const [apiKey, setApiKey] = useState("");
-  const [isConfigured, setIsConfigured] = useState(false);
-  const [statusMessage, setStatusMessage] = useState(`正在读取 ${config.title} 配置...`);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+function ModelProviderCardsPanel() {
+  const [profiles, setProfiles] = useState<ModelProviderProfile[]>([]);
+  const [statusMessage, setStatusMessage] = useState("正在读取模型接入配置...");
 
   useEffect(() => {
-    void refreshSettings();
-  }, [config.id]);
+    void refreshProfiles();
+  }, []);
 
-  async function refreshSettings() {
-    setIsLoading(true);
-    setStatusMessage(`正在读取 ${config.title} 配置...`);
+  async function refreshProfiles() {
     try {
-      const settings = await config.loadSettings();
-      setIsConfigured(settings.configured);
-      setStatusMessage(settings.configured ? `${config.title} 已配置。` : `${config.title} 尚未配置。`);
+      const nextProfiles = await studioApi.listModelProviders();
+      setProfiles(nextProfiles);
+      setStatusMessage(`已读取 ${nextProfiles.length} 个模型接入卡片。`);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : `无法读取 ${config.title} 配置状态。`);
-    } finally {
-      setIsLoading(false);
+      setStatusMessage(error instanceof Error ? error.message : "读取模型接入配置失败。");
     }
   }
 
-  async function handleSaveApiKey() {
-    if (!apiKey.trim()) {
-      setStatusMessage(`请输入 ${config.title}。`);
+  const profileMap = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
+
+  return (
+    <section className="panel animate-in">
+      <div className="section-title">
+        <KeyRound size={18} />
+        <h2>模型接入卡片</h2>
+      </div>
+      <p className="muted-line">模型 ID 是实际调用必需字段；支持查询模型的厂商会优先显示下拉框，不支持或查询失败时可以手动填写。</p>
+
+      <div className="api-settings-list">
+        {providerCards.map((definition) => (
+          <ProviderSettingCard key={definition.id} definition={definition} profile={profileMap.get(definition.id)} onSaved={refreshProfiles} />
+        ))}
+      </div>
+      <small>{statusMessage}</small>
+    </section>
+  );
+}
+
+function ProviderSettingCard({
+  definition,
+  profile,
+  onSaved
+}: {
+  definition: ProviderCardDefinition;
+  profile?: ModelProviderProfile;
+  onSaved: () => Promise<void>;
+}) {
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [availableModels, setAvailableModels] = useState<ModelProviderModel[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("正在读取配置...");
+
+  useEffect(() => {
+    setApiKey("");
+    setBaseUrl(profile?.baseUrl || definition.defaultBaseUrl);
+    setModel(profile?.model || definition.defaultModel);
+    setAvailableModels((definition.builtInModels ?? []).map((id) => ({ id, name: id, ownedBy: definition.title })));
+    setStatusMessage(profile?.configured ? `${definition.title} 已配置。` : `${definition.title} 尚未配置。`);
+  }, [definition.id, profile?.baseUrl, profile?.configured, profile?.model]);
+
+  async function saveSettings() {
+    if (!apiKey.trim() && !profile?.configured) {
+      setStatusMessage(`请填写${definition.apiKeyLabel}。`);
+      return;
+    }
+    if (definition.requiresBaseUrl && !baseUrl.trim()) {
+      setStatusMessage("请填写接口地址。");
+      return;
+    }
+    if (definition.allowModelInput && !model.trim()) {
+      setStatusMessage("请填写模型 ID。");
       return;
     }
 
     setIsSaving(true);
-    setStatusMessage(`正在保存 ${config.title}...`);
+    setStatusMessage(`正在保存 ${definition.title} 配置...`);
     try {
-      const result = await config.saveApiKey(apiKey);
-      setIsConfigured(result.configured);
+      const payload: ModelProviderProfilePayload = {
+        name: definition.title,
+        apiKey,
+        baseUrl,
+        chatCompletionsUrl: baseUrl,
+        modelsUrl: "",
+        model,
+        capabilities: profile?.capabilities ?? [],
+        timeoutSeconds: profile?.timeoutSeconds ?? 60,
+        maxRetries: profile?.maxRetries ?? 2,
+        enabled: true
+      };
+
+      if (definition.id === "rightcode") {
+        await studioApi.saveRightCodeApiKey(apiKey, "", model);
+      } else if (definition.id === "seedance") {
+        await studioApi.saveSeedanceApiKey(apiKey, model);
+      } else {
+        await studioApi.updateModelProvider(definition.id, payload);
+      }
+
       setApiKey("");
-      setStatusMessage(`${config.title} 已保存到本地后端。`);
+      await onSaved();
+      setStatusMessage(`${definition.title} 配置已保存。`);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "保存失败。");
+      setStatusMessage(error instanceof Error ? error.message : "保存模型配置失败。");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function refreshModels() {
+    if (!definition.supportsModelList) {
+      setStatusMessage(`${definition.title} 不支持查询模型，请手动填写模型 ID。`);
+      return;
+    }
+    if (!profile?.configured && !apiKey.trim()) {
+      setStatusMessage(`请先保存${definition.apiKeyLabel}后再查询模型。`);
+      return;
+    }
+    setIsLoadingModels(true);
+    setStatusMessage(`正在查询 ${definition.title} 可用模型...`);
+    try {
+      if (definition.builtInModels?.length) {
+        const models = definition.builtInModels.map((id) => ({ id, name: id, ownedBy: definition.title }));
+        setAvailableModels(models);
+        if (!models.some((item) => item.id === model)) {
+          setModel(models[0].id);
+        }
+        setStatusMessage(`已读取 ${models.length} 个内置模型。`);
+        return;
+      }
+      if (definition.requiresBaseUrl && baseUrl.trim()) {
+        await studioApi.updateModelProvider(definition.id, {
+          name: definition.title,
+          apiKey,
+          baseUrl,
+          chatCompletionsUrl: baseUrl,
+          modelsUrl: "",
+          model: model || definition.defaultModel,
+          capabilities: profile?.capabilities ?? [],
+          timeoutSeconds: profile?.timeoutSeconds ?? 60,
+          maxRetries: profile?.maxRetries ?? 2,
+          enabled: true
+        });
+      }
+      const models = await studioApi.listModelProviderModels(definition.id);
+      setAvailableModels(models);
+      if (models.length && !models.some((item) => item.id === model)) {
+        setModel(models[0].id);
+      }
+      setStatusMessage(models.length ? `已读取 ${models.length} 个可用模型。` : "接口未返回模型列表，请手动填写模型 ID。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? `${error.message} 可手动填写模型 ID。` : "读取可用模型失败，可手动填写模型 ID。");
+    } finally {
+      setIsLoadingModels(false);
     }
   }
 
@@ -116,30 +245,83 @@ function ApiKeySettingCard({ config }: { config: ApiKeyConfig }) {
     <article className="api-settings-card">
       <div className="api-settings-card-header">
         <div>
-          <strong>{config.title}</strong>
-          <p>{config.description}</p>
+          <strong>{definition.title}</strong>
+          <p>{definition.description}</p>
         </div>
-        <span className={isConfigured ? "status-ok" : "status-warn"}>{isConfigured ? "已配置" : "未配置"}</span>
+        <span className={profile?.configured ? "status-ok" : "status-warn"}>{profile?.configured ? "已配置" : "未配置"}</span>
       </div>
-      <div className="api-key-row">
-        <input
-          className="text-input"
-          type="password"
-          value={apiKey}
-          placeholder={isConfigured ? "已配置，可输入新 Key 覆盖" : config.placeholder}
-          onChange={(event) => setApiKey(event.target.value)}
-        />
-        <button className="ghost-button" type="button" disabled={isSaving} onClick={handleSaveApiKey}>
-          <Save size={16} />
-          {isSaving ? "保存中..." : "保存"}
-        </button>
+
+      <div className="api-settings-grid">
+        {definition.requiresBaseUrl ? (
+          <label className="api-settings-grid-wide">
+            接口地址
+            <input className="text-input" value={baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => setBaseUrl(event.target.value)} />
+          </label>
+        ) : (
+          <label className="api-settings-grid-wide">
+            内置接口地址
+            <input className="text-input" value={profile?.baseUrl || definition.defaultBaseUrl} disabled readOnly />
+          </label>
+        )}
+
+        {definition.allowModelInput ? (
+          <>
+            {availableModels.length ? (
+              <label>
+                {definition.builtInModels?.length ? "内置模型" : "模型下拉框"}
+                <select className="text-input" value={model} onChange={(event) => setModel(event.target.value)}>
+                  {availableModels.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name || item.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <label>
+              模型 ID
+              <input className="text-input" value={model} placeholder="请输入模型 ID" onChange={(event) => setModel(event.target.value)} />
+            </label>
+          </>
+        ) : (
+          <label>
+            内置模型
+            <input className="text-input" value={profile?.model || definition.defaultModel} disabled readOnly />
+          </label>
+        )}
+
+        <label className={definition.allowModelInput ? "" : "api-settings-grid-wide"}>
+          {definition.apiKeyLabel}
+          <input
+            className="text-input"
+            type="password"
+            value={apiKey}
+            placeholder={profile?.configured ? `已配置${profile.keyHint ? `（${profile.keyHint}）` : ""}，可输入新 Key 覆盖` : `请输入${definition.apiKeyLabel}`}
+            onChange={(event) => setApiKey(event.target.value)}
+          />
+        </label>
       </div>
+
+      <div className="model-provider-tags">
+        {(profile?.capabilities ?? []).map((capability) => (
+          <span key={capability}>{capability}</span>
+        ))}
+      </div>
+
       <div className="api-settings-card-footer">
-        <small className={isConfigured ? "status-ok" : "status-warn"}>{statusMessage}</small>
-        <button className="ghost-button" type="button" disabled={isLoading} onClick={refreshSettings}>
-          <RefreshCw size={16} />
-          {isLoading ? "刷新中..." : "刷新状态"}
-        </button>
+        <small>{statusMessage}</small>
+        <div className="api-settings-actions">
+          {definition.allowModelInput ? (
+            <button className="ghost-button" type="button" disabled={isLoadingModels} onClick={refreshModels}>
+              <RefreshCw size={16} />
+              {isLoadingModels ? "查询中..." : "查询模型"}
+            </button>
+          ) : null}
+          <button className="ghost-button" type="button" disabled={isSaving} onClick={saveSettings}>
+            <Save size={16} />
+            {isSaving ? "保存中..." : "保存"}
+          </button>
+        </div>
       </div>
     </article>
   );

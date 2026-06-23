@@ -26,15 +26,15 @@ export function ScreenplayOverviewPage() {
     }
 
     try {
-      const yaml = await studioApi.exportScreenplay(draft);
-      const blob = new Blob([yaml], { type: "application/x-yaml;charset=utf-8" });
+      const screenplayText = await studioApi.exportScreenplay(draft);
+      const blob = new Blob([screenplayText], { type: "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${draft.title || "screenplay"}.yaml`;
+      link.download = `${draft.title || "screenplay"}.txt`;
       link.click();
       URL.revokeObjectURL(url);
-      setStatusMessage("剧本 YAML 已导出。");
+      setStatusMessage("完整剧本已导出。");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "剧本导出失败。");
     }
@@ -51,7 +51,7 @@ export function ScreenplayOverviewPage() {
       <PageHeader
         eyebrow="Screenplay Overview"
         title="剧本总览"
-        description="查看已保存的场景剧本，统一导出为 YAML，后续可扩展为完整剧本审阅与版本管理。"
+        description="查看已保存的场景剧本，并导出生成的完整剧本。"
       />
 
       <div className="overview-layout">
@@ -70,7 +70,7 @@ export function ScreenplayOverviewPage() {
               <p>更新时间：{new Date(draft.updatedAt).toLocaleString()}</p>
               <button className="primary-button" type="button" onClick={handleExport}>
                 <Download size={16} />
-                导出 YAML
+                导出完整剧本
               </button>
               <small>{statusMessage}</small>
             </div>
