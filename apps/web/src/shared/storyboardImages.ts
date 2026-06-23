@@ -4,6 +4,7 @@ import type { VideoTaskTag } from "./videoTasks";
 
 const STORAGE_KEY = "novel-to-screenplay.storyboardImages";
 const TRASH_RETENTION_DAYS = 7;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export type StoryboardImageTask = {
   id: string;
@@ -138,6 +139,18 @@ export function useDeletedStoryboardImageTasks() {
   return tasks;
 }
 
+export function getPreferredStoryboardImageUrl(task: StoryboardImageTask) {
+  return getLocalGeneratedMediaUrl(task.localImagePath) || getMediaLocalUrl(task.media) || resolveApiAssetUrl(task.imageUrl ?? "");
+}
+
+export function getStoryboardImageReferenceUrl(task: StoryboardImageTask) {
+  return getPreferredStoryboardImageUrl(task) || resolveApiAssetUrl(task.originalImageUrl ?? "");
+}
+
+export function hasStoryboardImageUrl(task: StoryboardImageTask) {
+  return Boolean(getStoryboardImageReferenceUrl(task));
+}
+
 function purgeExpiredTasks(tasks: StoryboardImageTask[]) {
   const now = Date.now();
   return tasks.filter((task) => !task.expiresAt || new Date(task.expiresAt).getTime() > now);
@@ -169,6 +182,28 @@ function ensureStoryboardImageNovelTag(task: StoryboardImageTask): StoryboardIma
       route: "/import"
     }
   };
+}
+
+function getLocalGeneratedMediaUrl(localImagePath?: string) {
+  if (!localImagePath) return "";
+  const normalizedPath = localImagePath.replace(/\\/g, "/");
+  const marker = "/generated_media/";
+  const markerIndex = normalizedPath.lastIndexOf(marker);
+  if (markerIndex < 0) return "";
+  const relativePath = normalizedPath.slice(markerIndex + marker.length);
+  return resolveApiAssetUrl(`/media/generated/${relativePath}`);
+}
+
+function getMediaLocalUrl(media?: Record<string, unknown>) {
+  const localUrl = typeof media?.local_url === "string" ? media.local_url : "";
+  if (localUrl) return resolveApiAssetUrl(localUrl);
+  const localPath = typeof media?.local_path === "string" ? media.local_path : "";
+  return getLocalGeneratedMediaUrl(localPath);
+}
+
+function resolveApiAssetUrl(url: string) {
+  if (!url || !url.startsWith("/")) return url;
+  return `${API_BASE_URL}${url}`;
 }
 
 function writeTasks(tasks: StoryboardImageTask[]) {

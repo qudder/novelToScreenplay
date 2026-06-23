@@ -4,7 +4,13 @@ import { PageHeader } from "../../shared/PageHeader";
 import { studioApi } from "../../shared/api";
 import { getActiveNovelId, switchCurrentNovelFromBackend, useCurrentNovel, useNovelLibrary } from "../../shared/currentNovel";
 import { getScreenplayDraft, type SceneScreenplayDraft } from "../../shared/screenplayDraft";
-import { type StoryboardImageTask, useStoryboardImageTasks } from "../../shared/storyboardImages";
+import {
+  getPreferredStoryboardImageUrl,
+  getStoryboardImageReferenceUrl,
+  hasStoryboardImageUrl,
+  type StoryboardImageTask,
+  useStoryboardImageTasks
+} from "../../shared/storyboardImages";
 import type { ShotPlan } from "../../shared/types";
 import { useEntranceAnimation } from "../../shared/useEntranceAnimation";
 import { saveVideoTask, type VideoTaskTag } from "../../shared/videoTasks";
@@ -234,7 +240,7 @@ export function VideoGenerationPage() {
       }
       return uniqueStoryboardImageTasks([...current, task]);
     });
-    setStatusMessage(task.imageUrl || task.originalImageUrl ? `已更新分镜图片参考：${task.title}` : `已选择分镜图片任务：${task.title}，但该任务暂无图片 URL。`);
+    setStatusMessage(hasStoryboardImageUrl(task) ? `已更新分镜图片参考：${task.title}` : `已选择分镜图片任务：${task.title}，但该任务暂无图片 URL。`);
   }
 
   function removeStoryboardImageTask(taskId: string) {
@@ -626,7 +632,7 @@ function findRelatedStoryboardImages(option: VideoGranularityOption, tasks: Stor
   if (!option.shot) return [];
   const shotMatchedTasks = tasks.filter((task) => task.shot?.id === option.shot?.id && (!task.scene?.id || task.scene.id === option.scene.sceneId));
   if (!shotMatchedTasks.length) return [];
-  const availableTasks = shotMatchedTasks.filter((task) => task.imageUrl || task.originalImageUrl);
+  const availableTasks = shotMatchedTasks.filter(hasStoryboardImageUrl);
   const candidates = availableTasks.length ? availableTasks : shotMatchedTasks;
   if (!option.frame) return candidates;
 
@@ -647,7 +653,7 @@ function uniqueStoryboardImageTasks(tasks: StoryboardImageTask[]) {
 
 function getStoryboardImageUrls(tasks: StoryboardImageTask[]) {
   return tasks
-    .map((task) => task.originalImageUrl || task.imageUrl || "")
+    .map(getStoryboardImageReferenceUrl)
     .filter(Boolean)
     .filter((url, index, urls) => urls.indexOf(url) === index);
 }
@@ -874,24 +880,28 @@ function StoryboardImageSource({
               清空参考图
             </button>
           </div>
-          {selectedTasks.map((task, index) => (
-            <article className="selected-storyboard-reference" key={task.id}>
-              {task.imageUrl ? <img src={task.imageUrl} alt={task.title} /> : <span>暂无图片 URL</span>}
-              <div>
-                <strong>{index === 0 ? "首帧" : "参考图"}：{task.title}</strong>
-                <small>{task.shot?.label || "未关联分镜"}</small>
-              </div>
-              <button className="icon-button danger" type="button" aria-label={`移除${task.title}`} title="移除分镜图片" onClick={() => onRemove(task.id)}>
-                <Trash2 size={15} />
-              </button>
-            </article>
-          ))}
+          {selectedTasks.map((task, index) => {
+            const imageUrl = getPreferredStoryboardImageUrl(task);
+            return (
+              <article className="selected-storyboard-reference" key={task.id}>
+                {imageUrl ? <img src={imageUrl} alt={task.title} /> : <span>暂无图片 URL</span>}
+                <div>
+                  <strong>{index === 0 ? "首帧" : "参考图"}：{task.title}</strong>
+                  <small>{task.shot?.label || "未关联分镜"}</small>
+                </div>
+                <button className="icon-button danger" type="button" aria-label={`移除${task.title}`} title="移除分镜图片" onClick={() => onRemove(task.id)}>
+                  <Trash2 size={15} />
+                </button>
+              </article>
+            );
+          })}
         </div>
       ) : null}
       {tasks.length ? (
         <div className="storyboard-reference-list">
           {tasks.map((task) => {
             const isSelected = selectedTaskIds.has(task.id);
+            const imageUrl = getPreferredStoryboardImageUrl(task);
             return (
               <button
                 className={`storyboard-reference-card${isSelected ? " active" : ""}`}
@@ -899,9 +909,9 @@ function StoryboardImageSource({
                 key={task.id}
                 onClick={() => onToggle(task)}
               >
-                {task.imageUrl ? <img src={task.imageUrl} alt={task.title} /> : <span>待生成</span>}
+                {imageUrl ? <img src={imageUrl} alt={task.title} /> : <span>待生成</span>}
                 <strong>{task.title}</strong>
-                <small>{isSelected ? "已选参考图" : task.imageUrl ? "可作为参考图" : "暂无图片 URL"} · {task.shot?.label || "未关联分镜"}</small>
+                <small>{isSelected ? "已选参考图" : hasStoryboardImageUrl(task) ? "可作为参考图" : "暂无图片 URL"} · {task.shot?.label || "未关联分镜"}</small>
               </button>
             );
           })}

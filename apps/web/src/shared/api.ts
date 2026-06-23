@@ -66,6 +66,108 @@ type ArkModelListDto = {
   }>;
 };
 
+export type TextModelSettings = {
+  configured: boolean;
+  openaiBaseUrl: string;
+  model: string;
+};
+
+export type ModelPurpose = "narrative_analysis" | "screenplay_completion" | "storyboard_prompt" | "vision_understanding";
+
+export type ModelProviderProfile = {
+  id: string;
+  name: string;
+  providerType: "openai_compatible";
+  capabilities: string[];
+  baseUrl: string;
+  chatCompletionsUrl: string;
+  modelsUrl: string;
+  model: string;
+  timeoutSeconds: number;
+  maxRetries: number;
+  enabled: boolean;
+  configured: boolean;
+  keyHint: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ModelProviderProfilePayload = {
+  name: string;
+  apiKey?: string;
+  baseUrl?: string;
+  chatCompletionsUrl: string;
+  modelsUrl?: string;
+  model: string;
+  capabilities: string[];
+  timeoutSeconds: number;
+  maxRetries: number;
+  enabled: boolean;
+};
+
+export type ModelProviderDefaults = Record<ModelPurpose, string>;
+
+export type ModelProviderModel = {
+  id: string;
+  name: string;
+  ownedBy: string;
+};
+
+export type SeedanceModelSettings = {
+  configured: boolean;
+  model: string;
+};
+
+export type RightCodeModelSettings = {
+  configured: boolean;
+  openaiBaseUrl: string;
+  model: string;
+};
+
+type TextModelSettingsDto = {
+  configured: boolean;
+  openai_base_url: string;
+  model: string;
+};
+
+type ModelProviderProfileDto = {
+  id: string;
+  name: string;
+  provider_type: "openai_compatible";
+  capabilities: string[];
+  base_url: string;
+  chat_completions_url: string;
+  models_url: string;
+  model: string;
+  timeout_seconds: number;
+  max_retries: number;
+  enabled: boolean;
+  configured: boolean;
+  key_hint: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type ModelProviderModelListDto = {
+  models: Array<{
+    id: string;
+    name: string;
+    owned_by: string;
+  }>;
+  source: string;
+};
+
+type SeedanceModelSettingsDto = {
+  configured: boolean;
+  model: string;
+};
+
+type RightCodeModelSettingsDto = {
+  configured: boolean;
+  openai_base_url: string;
+  model: string;
+};
+
 export type DocumentSummary = {
   documentId: string;
   filename: string;
@@ -126,13 +228,56 @@ function mapSeedreamImageGeneration(result: SeedreamImageGenerationDto) {
     providerTaskId: result.id,
     model: result.model,
     status: result.status === "succeeded" ? "completed" : result.status === "failed" ? "failed" : "running",
-    imageUrl: resolveApiAssetUrl(result.image_url || mediaLocalUrl),
+    imageUrl: resolveApiAssetUrl(mediaLocalUrl || result.image_url),
     originalImageUrl: result.original_image_url ?? result.image_url,
     localImagePath: result.local_image_path || mediaLocalPath,
     media,
     b64Json: result.b64_json,
     errorMessage: result.error_message
   } as const;
+}
+
+function mapModelProviderProfile(dto: ModelProviderProfileDto): ModelProviderProfile {
+  return {
+    id: dto.id,
+    name: dto.name,
+    providerType: dto.provider_type,
+    capabilities: dto.capabilities,
+    baseUrl: dto.base_url,
+    chatCompletionsUrl: dto.chat_completions_url,
+    modelsUrl: dto.models_url,
+    model: dto.model,
+    timeoutSeconds: dto.timeout_seconds,
+    maxRetries: dto.max_retries,
+    enabled: dto.enabled,
+    configured: dto.configured,
+    keyHint: dto.key_hint,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at
+  };
+}
+
+function toModelProviderProfileDto(payload: ModelProviderProfilePayload) {
+  return {
+    name: payload.name,
+    api_key: payload.apiKey ?? "",
+    base_url: payload.baseUrl ?? "",
+    chat_completions_url: payload.chatCompletionsUrl,
+    models_url: payload.modelsUrl ?? "",
+    model: payload.model,
+    capabilities: payload.capabilities,
+    timeout_seconds: payload.timeoutSeconds,
+    max_retries: payload.maxRetries,
+    enabled: payload.enabled
+  };
+}
+
+function mapModelProviderModelList(dto: ModelProviderModelListDto): ModelProviderModel[] {
+  return dto.models.map((item) => ({
+    id: item.id,
+    name: item.name,
+    ownedBy: item.owned_by
+  }));
 }
 
 function toSourceRefDto(ref: SourceRef): SourceRefDto {
@@ -715,13 +860,17 @@ export const studioApi = {
     return mapImportResult((await response.json()) as ImportDocumentResult);
   },
 
-  async startDocumentAnalysis(documentId: string): Promise<{
+  async startDocumentAnalysis(documentId: string, modelProfileId = ""): Promise<{
     documentId: string;
     status: "idle" | "running" | "completed" | "failed";
     message: string;
   }> {
     const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/analysis`, {
-      method: "POST"
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ model_profile_id: modelProfileId })
     });
 
     if (!response.ok) {
@@ -737,13 +886,17 @@ export const studioApi = {
     };
   },
 
-  async retryDocumentAnalysis(documentId: string): Promise<{
+  async retryDocumentAnalysis(documentId: string, modelProfileId = ""): Promise<{
     documentId: string;
     status: "idle" | "running" | "completed" | "failed";
     message: string;
   }> {
     const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}/analysis/retry`, {
-      method: "POST"
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ model_profile_id: modelProfileId })
     });
 
     if (!response.ok) {
@@ -770,48 +923,131 @@ export const studioApi = {
     return mapAnalysisResult((await response.json()) as AnalysisResultDto);
   },
 
-  async getDeepSeekSettings(): Promise<{ configured: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/api/settings/deepseek`);
+  async listModelProviders(): Promise<ModelProviderProfile[]> {
+    const response = await fetch(`${API_BASE_URL}/api/model-providers`);
     if (!response.ok) {
-      throw new Error("读取 DeepSeek 配置失败。");
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "读取模型供应商档案失败。");
     }
-
-    return (await response.json()) as { configured: boolean };
+    return ((await response.json()) as ModelProviderProfileDto[]).map(mapModelProviderProfile);
   },
 
-  async saveDeepSeekApiKey(apiKey: string): Promise<{ configured: boolean }> {
+  async createModelProvider(payload: ModelProviderProfilePayload): Promise<ModelProviderProfile> {
+    const response = await fetch(`${API_BASE_URL}/api/model-providers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(toModelProviderProfileDto(payload))
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "新增模型供应商档案失败。");
+    }
+    return mapModelProviderProfile((await response.json()) as ModelProviderProfileDto);
+  },
+
+  async updateModelProvider(profileId: string, payload: ModelProviderProfilePayload): Promise<ModelProviderProfile> {
+    const response = await fetch(`${API_BASE_URL}/api/model-providers/${profileId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(toModelProviderProfileDto(payload))
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "更新模型供应商档案失败。");
+    }
+    return mapModelProviderProfile((await response.json()) as ModelProviderProfileDto);
+  },
+
+  async deleteModelProvider(profileId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/model-providers/${profileId}`, { method: "DELETE" });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.detail ?? "删除模型供应商档案失败。");
+    }
+  },
+
+  async listModelProviderModels(profileId: string): Promise<ModelProviderModel[]> {
+    const response = await fetch(`${API_BASE_URL}/api/model-providers/${profileId}/models`);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "读取可用模型失败。");
+    }
+    return mapModelProviderModelList((await response.json()) as ModelProviderModelListDto);
+  },
+
+  async getModelProviderDefaults(): Promise<ModelProviderDefaults> {
+    const response = await fetch(`${API_BASE_URL}/api/model-providers/defaults`);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "读取默认模型配置失败。");
+    }
+    return (await response.json()) as ModelProviderDefaults;
+  },
+
+  async saveModelProviderDefaults(defaults: Partial<ModelProviderDefaults>): Promise<ModelProviderDefaults> {
+    const response = await fetch(`${API_BASE_URL}/api/model-providers/defaults`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaults })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail ?? "保存默认模型配置失败。");
+    }
+    return (await response.json()) as ModelProviderDefaults;
+  },
+
+  async getDeepSeekSettings(): Promise<TextModelSettings> {
+    const response = await fetch(`${API_BASE_URL}/api/settings/deepseek`);
+    if (!response.ok) {
+      throw new Error("读取文本模型配置失败。");
+    }
+
+    const result = (await response.json()) as TextModelSettingsDto;
+    return {
+      configured: result.configured,
+      openaiBaseUrl: result.openai_base_url,
+      model: result.model
+    };
+  },
+
+  async saveDeepSeekApiKey(apiKey: string, openaiBaseUrl = "", model = ""): Promise<{ configured: boolean }> {
     const response = await fetch(`${API_BASE_URL}/api/settings/deepseek`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ api_key: apiKey })
+      body: JSON.stringify({ api_key: apiKey, openai_base_url: openaiBaseUrl, model })
     });
 
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      throw new Error(payload?.detail ?? "保存 DeepSeek API Key 失败。");
+      throw new Error(payload?.detail ?? "保存文本模型配置失败。");
     }
 
     return (await response.json()) as { configured: boolean };
   },
 
-  async getSeedanceSettings(): Promise<{ configured: boolean }> {
+  async getSeedanceSettings(): Promise<SeedanceModelSettings> {
     const response = await fetch(`${API_BASE_URL}/api/settings/seedance`);
     if (!response.ok) {
       throw new Error("读取 Seedance 配置失败。");
     }
 
-    return (await response.json()) as { configured: boolean };
+    const result = (await response.json()) as SeedanceModelSettingsDto;
+    return {
+      configured: result.configured,
+      model: result.model
+    };
   },
 
-  async saveSeedanceApiKey(apiKey: string): Promise<{ configured: boolean }> {
+  async saveSeedanceApiKey(apiKey: string, model = ""): Promise<{ configured: boolean }> {
     const response = await fetch(`${API_BASE_URL}/api/settings/seedance`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ api_key: apiKey })
+      body: JSON.stringify({ api_key: apiKey, model })
     });
 
     if (!response.ok) {
@@ -822,27 +1058,32 @@ export const studioApi = {
     return (await response.json()) as { configured: boolean };
   },
 
-  async getRightCodeSettings(): Promise<{ configured: boolean }> {
+  async getRightCodeSettings(): Promise<RightCodeModelSettings> {
     const response = await fetch(`${API_BASE_URL}/api/settings/rightcode`);
     if (!response.ok) {
-      throw new Error("读取 Right Code 配置失败。");
+      throw new Error("读取第三方服务配置失败。");
     }
 
-    return (await response.json()) as { configured: boolean };
+    const result = (await response.json()) as RightCodeModelSettingsDto;
+    return {
+      configured: result.configured,
+      openaiBaseUrl: result.openai_base_url,
+      model: result.model
+    };
   },
 
-  async saveRightCodeApiKey(apiKey: string): Promise<{ configured: boolean }> {
+  async saveRightCodeApiKey(apiKey: string, openaiBaseUrl = "", model = ""): Promise<{ configured: boolean }> {
     const response = await fetch(`${API_BASE_URL}/api/settings/rightcode`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ api_key: apiKey })
+      body: JSON.stringify({ api_key: apiKey, openai_base_url: openaiBaseUrl, model })
     });
 
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      throw new Error(payload?.detail ?? "保存 Right Code API Key 失败。");
+      throw new Error(payload?.detail ?? "保存第三方服务配置失败。");
     }
 
     return (await response.json()) as { configured: boolean };
@@ -977,6 +1218,7 @@ export const studioApi = {
     scene: SceneScreenplayDraft;
     shot: unknown;
     frame: unknown;
+    modelProfileId?: string;
   }): Promise<string> {
     const response = await fetch(`${API_BASE_URL}/api/storyboard-prompts/frame`, {
       method: "POST",
@@ -992,7 +1234,8 @@ export const studioApi = {
         time_of_day: payload.scene.timeOfDay,
         characters: payload.scene.characters,
         shot: payload.shot,
-        frame: payload.frame
+        frame: payload.frame,
+        model_profile_id: payload.modelProfileId ?? ""
       })
     });
 
@@ -1011,6 +1254,7 @@ export const studioApi = {
     scene: SceneScreenplayDraft;
     shot: unknown;
     frames: unknown[];
+    modelProfileId?: string;
   }): Promise<Record<string, string>> {
     const response = await fetch(`${API_BASE_URL}/api/storyboard-prompts/batch`, {
       method: "POST",
@@ -1026,7 +1270,8 @@ export const studioApi = {
         time_of_day: payload.scene.timeOfDay,
         characters: payload.scene.characters,
         shot: payload.shot,
-        frames: payload.frames
+        frames: payload.frames,
+        model_profile_id: payload.modelProfileId ?? ""
       })
     });
 
@@ -1045,6 +1290,7 @@ export const studioApi = {
     character: Character;
     template?: "single" | "identity-board";
     draftPrompt?: string;
+    modelProfileId?: string;
   }): Promise<string> {
     const response = await fetch(`${API_BASE_URL}/api/character-prompts/image`, {
       method: "POST",
@@ -1061,7 +1307,8 @@ export const studioApi = {
         aliases: payload.character.aliases,
         appearances: payload.character.appearances,
         template: payload.template ?? "single",
-        draft_prompt: payload.draftPrompt ?? ""
+        draft_prompt: payload.draftPrompt ?? "",
+        model_profile_id: payload.modelProfileId ?? ""
       })
     });
 
@@ -1098,6 +1345,7 @@ export const studioApi = {
     sourceText: string;
     events: Event[];
     currentContent: string;
+    modelProfileId?: string;
   }): Promise<string> {
     const sceneEventIdSet = new Set(payload.scene.eventIds);
     const sceneEventTitleSet = new Set(payload.scene.eventTitles);
@@ -1124,7 +1372,8 @@ export const studioApi = {
         events: relatedEvents,
         source_refs: payload.scene.sourceRefs.map(toSourceRefDto),
         source_text: payload.sourceText,
-        current_content: payload.currentContent
+        current_content: payload.currentContent,
+        model_profile_id: payload.modelProfileId ?? ""
       })
     });
 

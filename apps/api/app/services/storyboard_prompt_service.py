@@ -21,6 +21,7 @@ class StoryboardFramePromptRequest(BaseModel):
     characters: list[str] = []
     shot: dict[str, Any] = {}
     frame: dict[str, Any] = {}
+    model_profile_id: str = ""
 
 
 class StoryboardFramePromptResult(BaseModel):
@@ -37,6 +38,7 @@ class StoryboardBatchPromptRequest(BaseModel):
     characters: list[str] = []
     shot: dict[str, Any] = {}
     frames: list[dict[str, Any]] = []
+    model_profile_id: str = ""
 
 
 class StoryboardBatchPromptResult(BaseModel):
@@ -54,6 +56,7 @@ class CharacterImagePromptRequest(BaseModel):
     appearances: list[str] = []
     template: Literal["single", "identity-board"] = "single"
     draft_prompt: str = ""
+    model_profile_id: str = ""
 
 
 class CharacterImagePromptResult(BaseModel):
@@ -72,6 +75,7 @@ async def generate_storyboard_frame_prompt(payload: StoryboardFramePromptRequest
         debug_context=debug_context,
         temperature=0.35,
         max_tokens=1800,
+        model_profile_id=payload.model_profile_id,
     )
     logger.info("小分镜图片提示词生成完成：场景ID=%s，小分镜=%s，字符数=%s", payload.scene_id, frame_id, len(prompt))
     return StoryboardFramePromptResult(prompt=_clean_prompt(prompt))
@@ -90,6 +94,7 @@ async def generate_storyboard_batch_prompts(payload: StoryboardBatchPromptReques
             characters=payload.characters,
             shot=payload.shot,
             frame=frame,
+            model_profile_id=payload.model_profile_id,
         )
         result = await generate_storyboard_frame_prompt(frame_request)
         frame_id = str(frame.get("id") or f"frame-{len(prompts) + 1}")
@@ -108,6 +113,7 @@ async def generate_character_image_prompt(payload: CharacterImagePromptRequest) 
         debug_context=debug_context,
         temperature=0.35,
         max_tokens=1400,
+        model_profile_id=payload.model_profile_id,
     )
     logger.info("角色图片提示词生成完成：角色ID=%s，字符数=%s", payload.character_id, len(prompt))
     return CharacterImagePromptResult(prompt=_clean_prompt(prompt))

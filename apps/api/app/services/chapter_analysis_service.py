@@ -88,7 +88,13 @@ class AggregatedAnalysis:
         return sorted(merged.values(), key=lambda item: item.importance, reverse=True)
 
 
-async def analyze_chapters(chapters: list[Chapter], source_text: str, filename: str = "untitled", force_refresh: bool = False) -> AggregatedAnalysis:
+async def analyze_chapters(
+    chapters: list[Chapter],
+    source_text: str,
+    filename: str = "untitled",
+    force_refresh: bool = False,
+    model_profile_id: str = "",
+) -> AggregatedAnalysis:
     deepseek_config.cache_dir.mkdir(parents=True, exist_ok=True)
     semaphore = asyncio.Semaphore(deepseek_config.max_concurrent_chapter_requests)
     logger.info(
@@ -98,7 +104,17 @@ async def analyze_chapters(chapters: list[Chapter], source_text: str, filename: 
         deepseek_config.max_concurrent_chapter_requests,
     )
     analyses = await asyncio.gather(
-        *[_analyze_single_chapter(chapter, source_text, semaphore, filename=filename, force_refresh=force_refresh) for chapter in chapters]
+        *[
+            _analyze_single_chapter(
+                chapter,
+                source_text,
+                semaphore,
+                filename=filename,
+                force_refresh=force_refresh,
+                model_profile_id=model_profile_id,
+            )
+            for chapter in chapters
+        ]
     )
 
     return aggregate_chapter_analyses(chapters, list(analyses))
@@ -140,6 +156,7 @@ async def _analyze_single_chapter(
     semaphore: asyncio.Semaphore,
     filename: str = "untitled",
     force_refresh: bool = False,
+    model_profile_id: str = "",
 ) -> ChapterAnalysis:
     chapter_text = _chapter_text(chapter, source_text)
     chapter_start_char = _chapter_start_char(chapter, source_text, chapter_text)
@@ -195,6 +212,7 @@ async def _analyze_single_chapter(
             payload = await deepseek_client.extract_json(
                 user_prompt,
                 debug_context=_chapter_debug_name(chapter, chapter_text, filename),
+                model_profile_id=model_profile_id,
             )
         except Exception as error:
             (debug_dir / "chapter_error.txt").write_text(repr(error), encoding="utf-8")

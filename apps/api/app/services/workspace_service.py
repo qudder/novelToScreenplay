@@ -188,7 +188,7 @@ class WorkspaceService:
             resume_incomplete,
         )
 
-    async def run_analysis(self, document_id: str, force_refresh: bool = False, resume_incomplete: bool = False) -> None:
+    async def run_analysis(self, document_id: str, force_refresh: bool = False, resume_incomplete: bool = False, model_profile_id: str = "") -> None:
         record = document_store.get(document_id)
         if not record:
             logger.warning("跳过叙事分析执行：文档不存在，文档ID=%s", document_id)
@@ -196,10 +196,10 @@ class WorkspaceService:
 
         try:
             if resume_incomplete:
-                analysis = await _resume_incomplete_analysis(record)
+                analysis = await _resume_incomplete_analysis(record, model_profile_id)
             else:
-                logger.info("叙事分析开始执行：文档ID=%s，文件名=%s，章节数=%s", document_id, record.filename, len(record.chapters))
-                analysis = await analyze_chapters(record.chapters, record.source_text, filename=record.filename, force_refresh=force_refresh)
+                logger.info("叙事分析开始执行：文档ID=%s，文件名=%s，章节数=%s，临时模型档案=%s", document_id, record.filename, len(record.chapters), model_profile_id or "默认")
+                analysis = await analyze_chapters(record.chapters, record.source_text, filename=record.filename, force_refresh=force_refresh, model_profile_id=model_profile_id)
             record.analysis = AnalysisResult(
                 document_id=document_id,
                 status="completed",
@@ -269,7 +269,7 @@ def _has_analysis_payload(payload: ImportResult) -> bool:
     )
 
 
-async def _resume_incomplete_analysis(record: DocumentRecord):
+async def _resume_incomplete_analysis(record: DocumentRecord, model_profile_id: str = ""):
     pending_chapter_ids = _pending_chapter_ids(record)
     if not pending_chapter_ids:
         logger.info("未发现待续跑章节，将复用已有叙事分析结果：文档ID=%s，章节数=%s", record.id, len(record.chapters))
@@ -284,7 +284,7 @@ async def _resume_incomplete_analysis(record: DocumentRecord):
         len(pending_chapters),
         len(record.chapters) - len(pending_chapters),
     )
-    resumed_analysis = await analyze_chapters(pending_chapters, record.source_text, filename=record.filename, force_refresh=True)
+    resumed_analysis = await analyze_chapters(pending_chapters, record.source_text, filename=record.filename, force_refresh=True, model_profile_id=model_profile_id)
     existing_by_chapter_id = {
         analysis.chapter_id: analysis
         for analysis in record.analysis.chapter_analyses

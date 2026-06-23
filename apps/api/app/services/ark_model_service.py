@@ -29,12 +29,15 @@ class ArkModelService:
         api_key = os.getenv("SEEDANCE_API_KEY", "").strip()
         if not api_key:
             raise ArkModelConfigurationError("未配置 Seedance API Key。请先保存 API Key 后再查询可用模型。")
+        request_url = seedance_config.models_url.strip()
+        if not request_url:
+            raise ArkModelConfigurationError("未配置模型列表完整地址。请先在系统设置中填写接口地址。")
 
-        logger.info("准备查询 Ark 可用模型列表：基础地址=%s", seedance_config.base_url)
+        logger.info("准备查询 Ark 可用模型列表：接口地址=%s", request_url)
         try:
             async with httpx.AsyncClient(timeout=seedance_config.timeout_seconds) as client:
                 response = await client.get(
-                    f"{seedance_config.base_url}/models",
+                    request_url,
                     headers={"Authorization": f"Bearer {api_key}"},
                 )
                 response.raise_for_status()

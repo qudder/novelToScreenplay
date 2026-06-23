@@ -116,9 +116,10 @@ class SeedreamImageClient:
         debug_dir: Path,
     ) -> httpx.Response:
         max_attempts = _max_attempts(request.provider)
+        request_url = _image_generation_url(request.provider)
         for attempt in range(1, max_attempts + 1):
             response = await client.post(
-                f"{_base_url(request.provider)}/images/generations",
+                request_url,
                 headers=self._headers(self._get_api_key(request.provider)),
                 json=payload,
             )
@@ -144,7 +145,7 @@ class SeedreamImageClient:
         key_name = "RIGHTCODE_API_KEY" if provider == "rightcode" else "SEEDANCE_API_KEY"
         api_key = os.getenv(key_name, "").strip()
         if not api_key:
-            provider_name = "Right Code" if provider == "rightcode" else "Seedance"
+            provider_name = "第三方服务" if provider == "rightcode" else "Seedance"
             raise SeedreamImageConfigurationError(f"未配置 {provider_name} API Key。请先在系统设置中保存 API Key。")
         return api_key
 
@@ -158,6 +159,12 @@ class SeedreamImageClient:
         prompt = request.prompt.strip()
         if request.negative_prompt.strip():
             prompt = f"{prompt}\n\n请避免：{request.negative_prompt.strip()}"
+        if _uses_chat_completions(request.provider):
+            return {
+                "model": _request_model(request),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+            }
         payload: dict[str, Any] = {
             "model": _request_model(request),
             "prompt": prompt,
@@ -196,8 +203,9 @@ async def _store_image_if_ready(result: SeedreamImageGenerationResult, fallback_
 
 
 def _map_image_response(data: dict[str, Any]) -> SeedreamImageGenerationResult:
-    image_url = _find_image_url(data)
-    b64_json = _find_base64_image(data)
+    content = _find_chat_message_content(data)
+    image_url = _find_image_url(data) or _find_image_url(content)
+    b64_json = _find_base64_image(data) or _find_base64_image(content)
     error_message = _extract_error_from_payload(data)
 
     status: Literal["succeeded", "failed", "unknown"] = "succeeded" if image_url or b64_json else "unknown"
@@ -217,15 +225,19 @@ def _map_image_response(data: dict[str, Any]) -> SeedreamImageGenerationResult:
     )
 
 
-def _find_image_url(data: dict[str, Any]) -> str:
+def _find_image_url(data: Any) -> str:
     return _find_first_string(data, {"url", "image_url", "imageUrl"}, _looks_like_image_url)
 
 
-def _find_base64_image(data: dict[str, Any]) -> str:
+def _find_base64_image(data: Any) -> str:
     return _find_first_string(data, {"b64_json", "b64Json", "base64", "image"}, _looks_like_base64_image)
 
 
 def _find_first_string(value: Any, keys: set[str], predicate: Any | None = None) -> str:
+    if isinstance(value, str):
+        extracted = _extract_first_url(value) if predicate is _looks_like_image_url else value.strip()
+        if extracted and (predicate is None or predicate(extracted)):
+            return extracted
     if isinstance(value, dict):
         for key in keys:
             found = value.get(key)
@@ -244,6 +256,29 @@ def _find_first_string(value: Any, keys: set[str], predicate: Any | None = None)
             found = _find_first_string(item, keys, predicate)
             if found:
                 return found
+    return ""
+
+
+def _find_chat_message_content(data: dict[str, Any]) -> str:
+    choices = data.get("choices")
+    if not isinstance(choices, list):
+        return ""
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+    return ""
+
+
+def _extract_first_url(value: str) -> str:
+    for token in value.replace("\n", " ").split():
+        cleaned = token.strip("`'\"，。,.()[]{}<>")
+        if cleaned.startswith(("http://", "https://")):
+            return cleaned
     return ""
 
 
@@ -275,7 +310,7 @@ def _extract_error_from_payload(data: dict[str, Any]) -> str:
 def _request_model(request: SeedreamImageGenerationRequest) -> str:
     if request.model.strip():
         return request.model.strip()
-    return "gpt-image-2" if request.provider == "rightcode" else seedance_config.image_model
+    return seedance_config.rightcode_image_model if request.provider == "rightcode" else seedance_config.image_model
 
 
 def _reference_image_urls(request: SeedreamImageGenerationRequest) -> list[str]:
@@ -299,13 +334,24 @@ def _is_remote_image_reference_url(url: str) -> bool:
 
 
 def _response_format(request: SeedreamImageGenerationRequest) -> Literal["url", "b64_json"]:
+    if _uses_chat_completions(request.provider):
+        return "url"
     return "url" if request.provider == "rightcode" else request.response_format
 
 
-def _base_url(provider: Literal["seedream", "rightcode"]) -> str:
-    if provider == "rightcode":
-        return os.getenv("RIGHTCODE_DRAW_BASE_URL", "https://www.right.codes/draw/v1").rstrip("/")
-    return seedance_config.base_url
+def _uses_chat_completions(provider: Literal["seedream", "rightcode"]) -> bool:
+    if provider != "rightcode":
+        return False
+    return seedance_config.rightcode_image_generation_url.strip().rstrip("/").endswith("/chat/completions")
+
+
+def _image_generation_url(provider: Literal["seedream", "rightcode"]) -> str:
+    label = "第三方服务 OPENAI_BASE_URL" if provider == "rightcode" else "Seedream 图片生成完整地址"
+    url = seedance_config.rightcode_image_generation_url if provider == "rightcode" else seedance_config.seedream_image_generation_url
+    cleaned = url.strip()
+    if not cleaned:
+        raise SeedreamImageConfigurationError(f"未配置 {label}。请先在系统设置中填写完整接口地址。")
+    return cleaned
 
 
 def _timeout_seconds(provider: Literal["seedream", "rightcode"]) -> float:
@@ -347,11 +393,13 @@ def _response_error_message(response: httpx.Response) -> str:
 
 
 def _provider_label(provider: Literal["seedream", "rightcode"]) -> str:
-    return "Right Code" if provider == "rightcode" else "Seedream"
+    return "第三方服务" if provider == "rightcode" else "Seedream"
 
 
 def _extract_error_message(response: httpx.Response, provider: Literal["seedream", "rightcode"] = "seedream") -> str:
     provider_name = _provider_label(provider)
+    if response.status_code == 405:
+        return f"{provider_name} 请求失败：当前接口地址不支持 POST，请检查 OPENAI_BASE_URL 是否为真实的 /images/generations 或 /chat/completions 完整地址。"
     try:
         data = response.json()
     except ValueError:
@@ -362,7 +410,7 @@ def _extract_error_message(response: httpx.Response, provider: Literal["seedream
         message = error.get("message") or error.get("code")
         if message:
             if provider == "rightcode" and "excessive system load" in str(message).lower():
-                return "Right Code 请求失败：上游服务负载过高，请稍后重试。"
+                return "第三方服务请求失败：上游服务负载过高，请稍后重试。"
             return f"{provider_name} 请求失败：{message}"
     return f"{provider_name} 请求失败：HTTP {response.status_code}"
 
@@ -396,12 +444,13 @@ def _prompt_summary(prompt: str) -> str:
 
 
 def _response_summary(data: dict[str, Any]) -> dict[str, Any]:
+    content = _find_chat_message_content(data)
     return {
         "id": data.get("id") or data.get("task_id") or "",
         "model": data.get("model") or "",
         "status": data.get("status") or "",
-        "has_image_url": bool(_find_image_url(data)),
-        "has_b64_json": bool(_find_base64_image(data)),
+        "has_image_url": bool(_find_image_url(data) or _find_image_url(content)),
+        "has_b64_json": bool(_find_base64_image(data) or _find_base64_image(content)),
         "usage": data.get("usage") or {},
         "error": data.get("error") or "",
     }

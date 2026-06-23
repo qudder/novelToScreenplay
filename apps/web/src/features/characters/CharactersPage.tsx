@@ -234,6 +234,10 @@ function CharacterImageModal({
         if (isCancelled) return;
         setIsKeyConfigured(settings.configured);
         setKeyStatusMessage(settings.configured ? `${providerConfig.keyName} 已配置。` : `${providerConfig.keyName} 尚未配置。`);
+        if (imageProvider === "rightcode" && settings.model) {
+          setAvailableModels([settings.model]);
+          setModel(settings.model);
+        }
         if (settings.configured && providerConfig.supportsModelList) {
           void refreshModelOptions(imageProvider, () => isCancelled);
         }
@@ -252,8 +256,9 @@ function CharacterImageModal({
     try {
       if (!imageProviders[providerId].supportsModelList) return;
       const models = await studioApi.getSeedanceModels();
-      const matchedModels = models.map((item) => item.id).filter((id) => id.toLowerCase().includes("seedream"));
-      const nextModels = matchedModels.length ? matchedModels : models.map((item) => item.id);
+      const modelIds = models.map((item) => item.id);
+      const matchedModels = providerId === "seedream" ? modelIds.filter((id) => id.toLowerCase().includes("seedream")) : [];
+      const nextModels = matchedModels.length ? matchedModels : modelIds;
       if (isCancelled()) return;
       if (!nextModels.length) return;
       setAvailableModels(nextModels);
