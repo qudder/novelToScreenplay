@@ -1,6 +1,7 @@
 import os
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -275,6 +276,9 @@ def _find_chat_message_content(data: dict[str, Any]) -> str:
 
 
 def _extract_first_url(value: str) -> str:
+    match = re.search(r"https?://[^\s`'\"，。()\[\]{}<>]+", value)
+    if match:
+        return match.group(0).rstrip("，。,.")
     for token in value.replace("\n", " ").split():
         cleaned = token.strip("`'\"，。,.()[]{}<>")
         if cleaned.startswith(("http://", "https://")):
@@ -304,6 +308,9 @@ def _extract_error_from_payload(data: dict[str, Any]) -> str:
         return str(error.get("message") or error.get("code") or "")
     if error:
         return str(error)
+    content = _find_chat_message_content(data).lower()
+    if "excessive system load" in content:
+        return "上游服务负载过高"
     return ""
 
 
@@ -389,7 +396,9 @@ def _response_error_message(response: httpx.Response) -> str:
     error = data.get("error")
     if isinstance(error, dict):
         return str(error.get("message") or error.get("code") or "")
-    return str(error or "")
+    if error:
+        return str(error)
+    return _find_chat_message_content(data)
 
 
 def _provider_label(provider: Literal["seedream", "rightcode"]) -> str:
@@ -452,7 +461,7 @@ def _response_summary(data: dict[str, Any]) -> dict[str, Any]:
         "has_image_url": bool(_find_image_url(data) or _find_image_url(content)),
         "has_b64_json": bool(_find_base64_image(data) or _find_base64_image(content)),
         "usage": data.get("usage") or {},
-        "error": data.get("error") or "",
+        "error": data.get("error") or _extract_error_from_payload(data),
     }
 
 

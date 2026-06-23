@@ -261,7 +261,7 @@ export function ImportPage() {
   return (
     <section ref={ref} className="page">
       <PageHeader
-        eyebrow="Document Intake"
+        eyebrow="文本导入"
         title="小说导入"
         description="上传 TXT、Markdown 或 Docx 后，系统会先返回章节，再异步执行叙事分析。"
       />

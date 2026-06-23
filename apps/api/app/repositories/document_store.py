@@ -1,16 +1,16 @@
-import json
 import shutil
 from dataclasses import dataclass, field
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.core.storage_config import storage_config
-from app.core.storage_naming import document_dir_name, safe_slug
+from app.core.persistence import persistence_layout
 from app.domain.models import AnalysisResult, Chapter
 
-DATA_DIR = storage_config.documents_dir
-LEGACY_DATA_DIR = Path(__file__).resolve().parents[1] / ".data" / "documents"
+DATA_DIR = persistence_layout.documents_dir
+PREVIOUS_DATA_DIR = persistence_layout.legacy_documents_dir
+LEGACY_DATA_DIR = persistence_layout.app_legacy_documents_dir
 
 
 @dataclass
@@ -55,9 +55,15 @@ class DocumentRecord:
 
 
 class DocumentStore:
-    def __init__(self, data_dir: Path = DATA_DIR, legacy_data_dir: Path = LEGACY_DATA_DIR) -> None:
+    def __init__(
+        self,
+        data_dir: Path = DATA_DIR,
+        previous_data_dir: Path = PREVIOUS_DATA_DIR,
+        legacy_data_dir: Path = LEGACY_DATA_DIR,
+    ) -> None:
         self._records: dict[str, DocumentRecord] = {}
         self._data_dir = data_dir
+        self._previous_data_dir = previous_data_dir
         self._legacy_data_dir = legacy_data_dir
         self._data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -84,34 +90,39 @@ class DocumentStore:
 
         record_path = self._record_path(document_id)
         if not record_path.exists():
-            record_path = self._legacy_record_path(document_id)
+            record_path = self._previous_record_path(document_id)
+        if not record_path.exists():
+            record_path = self._legacy_flat_record_path(document_id)
         if not record_path.exists():
             return None
 
-        record = DocumentRecord.from_dict(json.loads(record_path.read_text(encoding="utf-8")))
+        record = DocumentRecord.from_dict(persistence_layout.read_json(record_path))
         self._records[record.id] = record
         self.save(record)
         return record
 
     def list(self) -> list[DocumentRecord]:
         records: list[tuple[float, DocumentRecord]] = []
-        for record_path in self._data_dir.glob("*/snapshot.json"):
+        seen_ids: set[str] = set()
+        for record_path in list(self._data_dir.glob("*/snapshot.json")) + list(self._previous_data_dir.glob("*/snapshot.json")):
             try:
-                record = DocumentRecord.from_dict(json.loads(record_path.read_text(encoding="utf-8")))
+                record = DocumentRecord.from_dict(persistence_layout.read_json(record_path))
                 updated_at = record_path.stat().st_mtime
-            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            except (OSError, JSONDecodeError, KeyError, TypeError, ValueError):
                 continue
+            if record.id in seen_ids:
+                continue
+            seen_ids.add(record.id)
             self._records[record.id] = record
+            if record_path.is_relative_to(self._previous_data_dir):
+                self.save(record)
             records.append((updated_at, record))
         return [record for _, record in sorted(records, key=lambda item: item[0], reverse=True)]
 
     def save(self, record: DocumentRecord) -> None:
         record_path = self._record_path(record.id, record.filename)
         record_path.parent.mkdir(parents=True, exist_ok=True)
-        record_path.write_text(
-            json.dumps(record.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        persistence_layout.write_json(record_path, record.to_dict())
 
     def delete(self, document_id: str) -> DocumentRecord | None:
         record = self.get(document_id)
@@ -119,26 +130,27 @@ class DocumentStore:
             return None
 
         self._records.pop(document_id, None)
-        record_paths = [self._record_path(document_id, record.filename), self._legacy_record_path(document_id)]
+        record_paths = [
+            self._record_path(document_id, record.filename),
+            self._previous_record_path(document_id, record.filename),
+            self._legacy_flat_record_path(document_id),
+        ]
         for record_path in record_paths:
             if record_path.exists():
-                if record_path.parent == self._data_dir or record_path.parent == self._legacy_data_dir:
+                if record_path.parent in {self._data_dir, self._previous_data_dir, self._legacy_data_dir}:
                     record_path.unlink(missing_ok=True)
                 else:
                     shutil.rmtree(record_path.parent, ignore_errors=True)
         return record
 
     def _record_path(self, document_id: str, filename: str | None = None) -> Path:
-        if filename:
-            return self._data_dir / document_dir_name(Path(filename).stem, document_id) / "snapshot.json"
-        matched_paths = list(self._data_dir.glob(f"*-{safe_slug(document_id, '未知文档', 36)}/snapshot.json"))
-        if matched_paths:
-            return matched_paths[0]
-        return self._data_dir / document_dir_name("未命名小说", document_id) / "snapshot.json"
+        return persistence_layout.document_snapshot_path_in(self._data_dir, document_id, filename)
 
-    def _legacy_record_path(self, document_id: str) -> Path:
-        safe_id = safe_slug(document_id, "未知文档", 80)
-        return self._legacy_data_dir / f"{safe_id}.json"
+    def _previous_record_path(self, document_id: str, filename: str | None = None) -> Path:
+        return persistence_layout.document_snapshot_path_in(self._previous_data_dir, document_id, filename)
+
+    def _legacy_flat_record_path(self, document_id: str) -> Path:
+        return persistence_layout.legacy_document_snapshot_path(document_id)
 
 
 def _model_to_dict(model: Any) -> dict[str, Any]:

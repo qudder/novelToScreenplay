@@ -1,36 +1,38 @@
-import hashlib
-import json
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.core.deepseek_config import deepseek_config
+from app.core.persistence import persistence_layout
 from app.domain.models import Chapter, Character
 from app.services.deepseek_client import deepseek_client
 
 
 def _chapter_cache_key(chapter: Chapter, chapter_text: str) -> str:
-    digest = hashlib.sha256(f"{chapter.id}\n{chapter.title}\n{chapter_text}".encode("utf-8")).hexdigest()
-    return digest
+    return persistence_layout.character_extraction_cache_path(chapter, chapter_text).stem
 
 
 def _chapter_cache_path(chapter: Chapter, chapter_text: str) -> Path:
-    return deepseek_config.cache_dir / f"{_chapter_cache_key(chapter, chapter_text)}.json"
+    return persistence_layout.character_extraction_cache_path(chapter, chapter_text)
 
 
 async def extract_characters_for_chapters(chapters: list[Chapter], source_text: str) -> list[Character]:
     all_characters: dict[str, Character] = {}
-    deepseek_config.cache_dir.mkdir(parents=True, exist_ok=True)
+    persistence_layout.deepseek_cache_dir.mkdir(parents=True, exist_ok=True)
 
     for chapter in chapters:
         chapter_text = _chapter_text(chapter, source_text)
         cache_path = _chapter_cache_path(chapter, chapter_text)
 
         if cache_path.exists():
-            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            payload = persistence_layout.read_json(cache_path)
         else:
-            payload = await deepseek_client.extract_json(_build_user_prompt(chapter, chapter_text))
-            cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            legacy_cache_path = persistence_layout.legacy_character_extraction_cache_path(chapter, chapter_text)
+            if legacy_cache_path.exists():
+                payload = persistence_layout.read_json(legacy_cache_path)
+                persistence_layout.write_json(cache_path, payload)
+            else:
+                payload = await deepseek_client.extract_json(_build_user_prompt(chapter, chapter_text))
+                persistence_layout.write_json(cache_path, payload)
 
         for character in _parse_characters(payload, chapter.id):
             existing = all_characters.get(character.name)
@@ -98,7 +100,10 @@ def _chapter_text(chapter: Chapter, source_text: str) -> str:
     return source_text[start:next_index].strip()
 
 
+def chapter_text_for_cache(chapter: Chapter, source_text: str) -> str:
+    return _chapter_text(chapter, source_text)
+
+
 def _attach_character_ids(chapters: list[Chapter], characters: list[Character]) -> None:
     for chapter in chapters:
         chapter.character_ids = [character.id for character in characters if chapter.id in character.appearances]
-

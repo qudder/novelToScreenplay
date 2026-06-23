@@ -1,14 +1,15 @@
 import os
 from pathlib import Path
 
+from app.core.persistence import persistence_layout
 from app.core.storage_config import storage_config
 
 
 class SeedanceConfig:
     def __init__(self) -> None:
-        self.debug_dir = Path(os.getenv("SEEDANCE_DEBUG_DIR", storage_config.debug_dir / "seedance"))
-        self.seedream_debug_dir = Path(os.getenv("SEEDREAM_DEBUG_DIR", storage_config.debug_dir / "seedream"))
-        self.media_dir = storage_config.generated_media_dir
+        self.debug_dir = Path(os.getenv("SEEDANCE_DEBUG_DIR", persistence_layout.seedance_debug_dir))
+        self.seedream_debug_dir = Path(os.getenv("SEEDREAM_DEBUG_DIR", persistence_layout.seedream_debug_dir))
+        self.media_dir = persistence_layout.generated_media_dir
 
     @property
     def base_url(self) -> str:

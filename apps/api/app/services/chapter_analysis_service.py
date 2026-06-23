@@ -1,11 +1,11 @@
 import asyncio
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
 from app.core.deepseek_config import deepseek_config
 from app.core.logging_config import get_logger
+from app.core.persistence import CHAPTER_ANALYSIS_CACHE_SCHEMA_VERSION, persistence_layout
 from app.domain.models import (
     Action,
     CausalLink,
@@ -32,7 +32,7 @@ from app.domain.models import (
 from app.services.deepseek_client import deepseek_client
 
 logger = get_logger("services.chapter_analysis")
-CACHE_SCHEMA_VERSION = "chapter-analysis-v6-costumes-scene-info"
+CACHE_SCHEMA_VERSION = CHAPTER_ANALYSIS_CACHE_SCHEMA_VERSION
 
 
 class _RefreshChapterCache(RuntimeError):
@@ -95,7 +95,7 @@ async def analyze_chapters(
     force_refresh: bool = False,
     model_profile_id: str = "",
 ) -> AggregatedAnalysis:
-    deepseek_config.cache_dir.mkdir(parents=True, exist_ok=True)
+    persistence_layout.deepseek_cache_dir.mkdir(parents=True, exist_ok=True)
     semaphore = asyncio.Semaphore(deepseek_config.max_concurrent_chapter_requests)
     logger.info(
         "开始分发章节叙事分析：文件名=%s，章节数=%s，最大并发=%s",
@@ -160,8 +160,9 @@ async def _analyze_single_chapter(
 ) -> ChapterAnalysis:
     chapter_text = _chapter_text(chapter, source_text)
     chapter_start_char = _chapter_start_char(chapter, source_text, chapter_text)
-    cache_path = _chapter_cache_path(chapter, chapter_text, filename)
-    legacy_cache_path = _legacy_chapter_cache_path(chapter, chapter_text, filename)
+    paths = persistence_layout.chapter_analysis_paths(chapter, chapter_text, filename)
+    cache_path = paths.cache_path
+    legacy_cache_path = paths.legacy_cache_path
 
     if force_refresh and cache_path.exists():
         logger.info("已请求强制刷新，章节叙事分析缓存将被忽略：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
@@ -173,7 +174,7 @@ async def _analyze_single_chapter(
     if read_cache_path.exists() and not force_refresh:
         logger.info("发现章节叙事分析缓存候选：章节ID=%s，缓存路径=%s", chapter.id, read_cache_path)
         try:
-            payload = _unwrap_cache_payload(json.loads(read_cache_path.read_text(encoding="utf-8")))
+            payload = _unwrap_cache_payload(persistence_layout.read_json(read_cache_path))
             if not _has_required_source_refs(payload):
                 logger.warning("章节叙事分析缓存缺少来源引用，将刷新：章节ID=%s，缓存路径=%s", chapter.id, read_cache_path)
                 if read_cache_path == cache_path:
@@ -182,8 +183,7 @@ async def _analyze_single_chapter(
             analysis = _parse_analysis(chapter.id, payload)
             _attach_source_positions(analysis, chapter_text, chapter_start_char)
             if read_cache_path != cache_path:
-                cache_path.parent.mkdir(parents=True, exist_ok=True)
-                cache_path.write_text(json.dumps(_cache_payload(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+                persistence_layout.write_json(cache_path, _cache_payload(payload))
                 logger.info("旧章节叙事分析缓存已迁移到统一目录：章节ID=%s，新缓存路径=%s", chapter.id, cache_path)
             logger.info("章节叙事分析命中缓存：章节ID=%s，缓存路径=%s", chapter.id, read_cache_path)
             return analysis
@@ -196,7 +196,7 @@ async def _analyze_single_chapter(
 
     async with semaphore:
         user_prompt = _build_user_prompt(chapter, chapter_text)
-        debug_dir = _chapter_debug_dir(chapter, chapter_text, filename)
+        debug_dir = paths.debug_dir
         debug_dir.mkdir(parents=True, exist_ok=True)
         logger.info(
             "请求章节叙事分析：文件名=%s，章节ID=%s，标题=%s，正文字符数=%s，调试目录=%s",
@@ -218,9 +218,8 @@ async def _analyze_single_chapter(
             (debug_dir / "chapter_error.txt").write_text(repr(error), encoding="utf-8")
             logger.exception("章节叙事分析失败，已跳过本章：章节ID=%s，标题=%s，错误=%s", chapter.id, chapter.title, error)
             return _empty_analysis(chapter.id)
-        (debug_dir / "model_output.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(_cache_payload(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+        persistence_layout.write_json(debug_dir / "model_output.json", payload)
+        persistence_layout.write_json(cache_path, _cache_payload(payload))
         logger.info("章节叙事分析已写入缓存：章节ID=%s，缓存路径=%s", chapter.id, cache_path)
         analysis = _parse_analysis(chapter.id, payload)
         _attach_source_positions(analysis, chapter_text, chapter_start_char)
@@ -228,30 +227,27 @@ async def _analyze_single_chapter(
 
 
 def _chapter_cache_key(chapter: Chapter, chapter_text: str) -> str:
-    digest = hashlib.sha256(f"{CACHE_SCHEMA_VERSION}\n{chapter.id}\n{chapter.title}\n{chapter_text}".encode("utf-8")).hexdigest()
-    return digest
+    return persistence_layout.chapter_analysis_key(chapter, chapter_text)
 
 
 def _chapter_cache_path(chapter: Chapter, chapter_text: str, filename: str) -> Path:
-    return deepseek_config.cache_dir / f"{_chapter_debug_name(chapter, chapter_text, filename)}.json"
+    return persistence_layout.chapter_analysis_paths(chapter, chapter_text, filename).cache_path
 
 
 def _legacy_chapter_cache_path(chapter: Chapter, chapter_text: str, filename: str) -> Path:
-    return deepseek_config.legacy_cache_dir / f"{_chapter_debug_name(chapter, chapter_text, filename)}.json"
+    return persistence_layout.chapter_analysis_paths(chapter, chapter_text, filename).legacy_cache_path
 
 
 def _chapter_debug_dir(chapter: Chapter, chapter_text: str, filename: str) -> Path:
-    return deepseek_config.debug_dir / _chapter_debug_name(chapter, chapter_text, filename)
+    return persistence_layout.chapter_analysis_paths(chapter, chapter_text, filename).debug_dir
 
 
 def _chapter_debug_name(chapter: Chapter, chapter_text: str, filename: str) -> str:
-    return f"{_safe_path_part(Path(filename).stem)}-{chapter.id}-{_chapter_cache_key(chapter, chapter_text)[:12]}"
+    return persistence_layout.chapter_analysis_name(chapter, chapter_text, filename)
 
 
-def _safe_path_part(value: str, max_length: int = 48) -> str:
-    safe_value = "".join(char if char.isalnum() or char in "-_" else "-" for char in value.strip())
-    safe_value = "-".join(part for part in safe_value.split("-") if part)
-    return (safe_value or "untitled")[:max_length]
+def chapter_text_for_cache(chapter: Chapter, source_text: str) -> str:
+    return _chapter_text(chapter, source_text)
 
 
 def _build_user_prompt(chapter: Chapter, chapter_text: str) -> str:
